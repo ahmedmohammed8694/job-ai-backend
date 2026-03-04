@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 node_modules/
 .env
 .env.local
 .env.production
 npm-debug.log
+=======
+node_modules/
+.env
+.env.local
+.env.production
+npm-debug.log
+>>>>>>> 8557b2fe7202acbed0abe178b93aac2ded146c9e
 .DS_Store
