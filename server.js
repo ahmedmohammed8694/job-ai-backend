@@ -10,7 +10,7 @@ dotenv.config();
 
 const app = new Hono();
 
-// Enable CORS
+// Enable CORS for all origins (Tampermonkey, Browser, Web Apps)
 app.use("*", cors());
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -103,29 +103,6 @@ async function executeQuery(c, sql, params = []) {
 }
 
 //////////////////////////////////////////////////////////////////
-// Auth Middleware
-//////////////////////////////////////////////////////////////////
-
-async function verifyToken(c, next) {
-  try {
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader) return c.json({ error: "No token provided" }, 401);
-
-    const token = authHeader.split("Bearer ")[1];
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: GOOGLE_CLIENT_ID
-    });
-
-    c.set("user", ticket.getPayload());
-    await next();
-
-  } catch (err) {
-    return c.json({ error: "Invalid or expired token" }, 401);
-  }
-}
-
-//////////////////////////////////////////////////////////////////
 // Routes
 //////////////////////////////////////////////////////////////////
 
@@ -139,18 +116,18 @@ app.get("/", (c) => {
 });
 
 // Upload Resume to Cloudflare R2 Bucket (jobassistantpremium)
-app.post("/api/upload-resume", verifyToken, async (c) => {
+app.post("/api/upload-resume", async (c) => {
   try {
-    const user = c.get("user");
     const formData = await c.req.formData();
     const file = formData.get("resume");
+    const userEmail = formData.get("userEmail") || "ahmed.mohammed8694@gmail.com";
 
     if (!file || typeof file === "string") {
       return c.json({ error: "No resume file provided" }, 400);
     }
 
     const filename = file.name || "resume.pdf";
-    const fileKey = `resumes/${user.email}/${randomUUID()}-${filename}`;
+    const fileKey = `resumes/${userEmail}/${randomUUID()}-${filename}`;
     const contentType = file.type || "application/pdf";
     const arrayBuffer = await file.arrayBuffer();
 
@@ -161,7 +138,7 @@ app.post("/api/upload-resume", verifyToken, async (c) => {
       });
     }
 
-    const fileUrl = `/api/resume/${encodeURIComponent(fileKey)}`;
+    const fileUrl = `https://job-ai-backend.ahmed-mohammed8694.workers.dev/api/resume/${encodeURIComponent(fileKey)}`;
 
     return c.json({
       success: true,
@@ -173,7 +150,7 @@ app.post("/api/upload-resume", verifyToken, async (c) => {
 
   } catch (err) {
     console.error("Error uploading resume to R2:", err);
-    return c.json({ error: "Failed to upload resume" }, 500);
+    return c.json({ error: "Failed to upload resume", details: err.message }, 500);
   }
 });
 
@@ -193,6 +170,8 @@ app.get("/api/resume/:key{.+}", async (c) => {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag);
+    headers.set("Content-Type", object.httpMetadata?.contentType || "application/pdf");
+    headers.set("Content-Disposition", "inline");
 
     return new Response(object.body, { headers });
 
@@ -203,13 +182,12 @@ app.get("/api/resume/:key{.+}", async (c) => {
 });
 
 // Track Application
-app.post("/api/track", verifyToken, async (c) => {
+app.post("/api/track", async (c) => {
   try {
     const body = await c.req.json();
-    const { company, jobTitle, location, applyLink, resumeScore, resumeUrl, status } = body;
+    const { company, jobTitle, location, applyLink, resumeScore, resumeUrl, status, userEmail } = body;
     const id = randomUUID();
-    const user = c.get("user");
-    const userEmail = user.email;
+    const email = userEmail || "ahmed.mohammed8694@gmail.com";
     const appStatus = status || "Applied";
     const createdAt = new Date().toISOString();
 
@@ -217,7 +195,7 @@ app.post("/api/track", verifyToken, async (c) => {
       c,
       `INSERT INTO applications (id, userEmail, company, jobTitle, location, applyLink, resumeScore, resumeUrl, status, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, userEmail, company, jobTitle, location, applyLink, resumeScore, resumeUrl || null, appStatus, createdAt]
+      [id, email, company, jobTitle, location, applyLink, resumeScore, resumeUrl || null, appStatus, createdAt]
     );
 
     return c.json({ success: true, id });
@@ -229,13 +207,13 @@ app.post("/api/track", verifyToken, async (c) => {
 });
 
 // Get Applications
-app.get("/api/applications", verifyToken, async (c) => {
+app.get("/api/applications", async (c) => {
   try {
-    const user = c.get("user");
+    const email = c.req.query("email") || "ahmed.mohammed8694@gmail.com";
     const apps = await executeQuery(
       c,
       `SELECT * FROM applications WHERE userEmail = ? ORDER BY createdAt DESC`,
-      [user.email]
+      [email]
     );
 
     return c.json(apps);
@@ -247,16 +225,16 @@ app.get("/api/applications", verifyToken, async (c) => {
 });
 
 // Update Status
-app.put("/api/update-status/:id", verifyToken, async (c) => {
+app.put("/api/update-status/:id", async (c) => {
   try {
-    const { status } = await c.req.json();
+    const { status, userEmail } = await c.req.json();
     const id = c.req.param("id");
-    const user = c.get("user");
+    const email = userEmail || "ahmed.mohammed8694@gmail.com";
 
     await executeQuery(
       c,
       `UPDATE applications SET status = ? WHERE id = ? AND userEmail = ?`,
-      [status, id, user.email]
+      [status, id, email]
     );
 
     return c.json({ success: true });
