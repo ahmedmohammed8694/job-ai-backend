@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.04
+// @name         Job Assistant Premium Naukri & LinkedIn V01.05
 // @namespace    http://tampermonkey.net/
-// @version      01.04
-// @description  Stable UI + LinkedIn Shadow DOM isolation fix. All functions preserved.
+// @version      01.05
+// @description  Stable UI + Cloudflare D1 Database & R2 Storage integration.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -117,11 +117,88 @@ Product Adoption & Engagement, Windows Troubleshooting
     // Or just paste it below between the quotes.
     const GEMINI_MODEL = "gemini-flash-latest";
     const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
     function getGeminiApiKey() {
         try {
-            const stored = typeof GM_getValue === "function" ? GM_getValue("geminiApiKey", "") : "";
-            return stored || "";
+            const gmKey = typeof GM_getValue === "function" ? GM_getValue("geminiApiKey", "") : "";
+            const lsKey = typeof localStorage !== "undefined" ? localStorage.getItem("geminiApiKey") : "";
+            return (gmKey || lsKey || "").trim();
         } catch (e) { return ""; }
+    }
+
+    function showGeminiKeyModal() {
+        const old = document.getElementById("gemini-key-modal");
+        if (old) old.remove();
+
+        const currentKey = getGeminiApiKey();
+        const modal = document.createElement("div");
+        modal.id = "gemini-key-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:380px;max-height:85vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#58a6ff;font-size:14px;">🤖 Gemini AI Key Setup</strong>
+                    <span id="closeGeminiModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
+
+                <div style="background:rgba(56,139,253,0.1);border:1px solid rgba(56,139,253,0.3);border-radius:10px;padding:12px;margin-bottom:14px;">
+                    <strong style="color:#79c0ff;font-size:11px;display:block;margin-bottom:6px;">📖 HOW TO GET A FREE GEMINI API KEY:</strong>
+                    <ol style="margin:0;padding-left:18px;color:#8b949e;line-height:1.6;font-size:11px;">
+                        <li>Click the green button below to open <strong>Google AI Studio</strong>.</li>
+                        <li>Log in with your Google account.</li>
+                        <li>Click <strong>"Create API Key"</strong>.</li>
+                        <li>Copy your generated key and paste it in the box below!</li>
+                    </ol>
+                    <div style="margin-top:10px;text-align:center;">
+                        <a href="https://aistudio.google.com/apikey" target="_blank" style="display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:600;font-size:11px;">🚀 Open Google AI Studio (Free) →</a>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
+                        Paste your Gemini API Key here:
+                    </label>
+                    <input type="text" id="geminiApiKeyInput" value="${currentKey}" placeholder="Paste your key here (e.g. AIzaSy...)" style="width:100%;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:12px;outline:none;" />
+                </div>
+
+                <div style="display:flex;gap:8px;">
+                    <button id="saveGeminiKeyBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        💾 Save API Key
+                    </button>
+                    <button id="clearGeminiKeyBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
+                        Clear
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closeGeminiModal").onclick = () => modal.remove();
+
+        modal.querySelector("#saveGeminiKeyBtn").onclick = () => {
+            const inputVal = modal.querySelector("#geminiApiKeyInput").value.trim();
+            if (typeof GM_setValue === "function") {
+                GM_setValue("geminiApiKey", inputVal);
+            }
+            try { localStorage.setItem("geminiApiKey", inputVal); } catch (e) { }
+            if (inputVal) {
+                alert("✅ Gemini API Key saved successfully!\n\nGemini AI will now analyze each Job Description & Resume dynamically for every job!");
+            } else {
+                alert("ℹ️ Gemini API Key cleared.");
+            }
+            modal.remove();
+        };
+
+        modal.querySelector("#clearGeminiKeyBtn").onclick = () => {
+            modal.querySelector("#geminiApiKeyInput").value = "";
+            if (typeof GM_setValue === "function") {
+                GM_setValue("geminiApiKey", "");
+            }
+            try { localStorage.setItem("geminiApiKey", ""); } catch (e) { }
+            alert("ℹ️ Gemini API Key cleared.");
+        };
     }
 
     // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
@@ -139,11 +216,17 @@ Product Adoption & Engagement, Windows Troubleshooting
             console.warn("[Job Assistant][Gemini] JD extraction looks too short/empty — the AI message may not be well-tailored for this job. Try scrolling the JD into view before clicking.");
         }
 
-        const apiKey = getGeminiApiKey();
+        let apiKey = getGeminiApiKey();
         const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
         const staticFallback = type === "email" ? emailBody(infoForFallback) : waBody(infoForFallback);
+
         if (!apiKey) {
-            console.warn("[Job Assistant] No Gemini API key set — using static template. Run GM_setValue('geminiApiKey','...') once, or paste your key into GEMINI_API_KEY in the script.");
+            showGeminiKeyModal();
+            apiKey = getGeminiApiKey();
+        }
+
+        if (!apiKey) {
+            console.warn("[Job Assistant] No Gemini API key set — using static template fallback.");
             onDone(staticFallback, true);
             return;
         }
@@ -1065,9 +1148,14 @@ Sincerely, Mohammed Ahmed`;
         fileInput.style.display = "none";
         shadow.appendChild(fileInput);
 
-        // Section 3 — HR Info (LinkedIn only)
+        // Section 3 — AI & Settings
+        body.appendChild(makeSection("s3-label", "3. AI Configuration", [
+            { id: "keyBtn", text: "🔑 Gemini API Key", full: true }
+        ]));
+
+        // Section 4 — HR Info (LinkedIn only)
         if (isLinkedIn) {
-            body.appendChild(makeSection("s3-label", "3. HR Info", [
+            body.appendChild(makeSection("s3-label", "4. HR Info", [
                 { id: "recruiterBtn", text: "🔍 HR Info", full: true }
             ]));
         }
@@ -1164,6 +1252,7 @@ Sincerely, Mohammed Ahmed`;
             }
         };
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
+        shadow.getElementById("keyBtn").onclick = () => { showGeminiKeyModal(); };
         if (isLinkedIn) {
             shadow.getElementById("recruiterBtn").onclick = () => {
                 handleLoggedAction({ applyStatus: "Applied on Portal" }, () => showRecruiterModal(getLinkedInHiringTeam()));
