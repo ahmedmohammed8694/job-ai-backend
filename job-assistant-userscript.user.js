@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.09
+// @name         Job Assistant Premium Naukri & LinkedIn V01.13
 // @namespace    http://tampermonkey.net/
-// @version      01.09
-// @description  Upgraded Gemini 1.5 Flash AI email engine + full structured bullet points & signatures.
+// @version      01.13
+// @description  Dual Email & WhatsApp prompt manager tabs + Gemini AI prompt refiner chat.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -202,8 +202,9 @@ Product Adoption & Engagement, Windows Troubleshooting
         };
     }
 
-    function getDefaultAiPromptTemplate() {
-        return `You are an elite executive career advisor writing a highly persuasive, customized job application email for candidate Mohammed Ahmed applying for the {JOB_TITLE} position at {COMPANY_NAME}.
+    function getDefaultAiPromptTemplate(type = "email") {
+        if (type === "whatsapp") {
+            return `You are an elite executive career advisor writing a concise, high-converting WHATSAPP message for a candidate applying for the {JOB_TITLE} position at {COMPANY_NAME}.
 
 CANDIDATE RESUME SUMMARY:
 {RESUME_TEXT}
@@ -216,17 +217,56 @@ TARGET JOB DESCRIPTION:
 {JOB_DESCRIPTION}
 
 PROMPT INSTRUCTIONS:
-1. Deeply analyze the TARGET JOB DESCRIPTION against Mohammed Ahmed's candidate profile (8+ years in Relationship Management, Account Management, Inside Sales, Client Retention & Operations).
-2. Write a compelling, highly professional application email tailored specifically to this position and company.
-3. Include a bulleted section ("Key Highlights & Relevant Achievements:") highlighting 3-4 quantified achievements from the resume that directly align with the core requirements of this role.
-4. Maintain a warm, confident, articulate tone.
-5. End with the candidate's exact links and professional closing signature.
+1. Deeply analyze the TARGET JOB DESCRIPTION against the CANDIDATE RESUME SUMMARY above.
+2. Craft a short, high-converting WhatsApp message under 110 words (plain text only, no bold asterisks or markdown formatting).
+3. Highlight 2-3 key metrics/achievements from the resume that directly match this job's core requirements.
+4. EXCLUSIVELY extract candidate's Contact Name, Phone, Email, LinkedIn URL, and Portfolio URL directly from the CANDIDATE RESUME SUMMARY text above. DO NOT use any default values. If any contact detail is missing, leave that line blank.
 
-REQUIRED OUTPUT STRUCTURE (Strictly follow this exact layout):
+STRICT SIGNATURE & LAYOUT FORMAT:
 
 Dear Hiring Manager,
 
-[Opening paragraph expressing strong interest in {JOB_TITLE} at {COMPANY_NAME}, linking background to company goals]
+[Concise, high-converting pitch explaining why candidate matches {JOB_TITLE} at {COMPANY_NAME}]
+
+Key Highlights:
+- [Metric 1]
+- [Metric 2]
+
+Best regards,
+[Candidate Full Name extracted strictly from Resume]
+[Candidate Phone extracted strictly from Resume, or leave blank if missing]
+[Candidate Email extracted strictly from Resume, or leave blank if missing]
+LinkedIn: [Candidate LinkedIn URL extracted strictly from Resume, or leave blank if missing]
+Portfolio: [Candidate Portfolio URL extracted strictly from Resume, or leave blank if missing]
+Resume: {RESUME_URL}
+
+Return ONLY the clean plain text message without markdown, code blocks, or preamble.`;
+        }
+
+        return `You are an elite executive career advisor writing a highly persuasive, customized job application email for a candidate applying for the {JOB_TITLE} position at {COMPANY_NAME}.
+
+CANDIDATE RESUME SUMMARY:
+{RESUME_TEXT}
+
+TARGET JOB DETAILS:
+- Role Title: {JOB_TITLE}
+- Company Name: {COMPANY_NAME}
+
+TARGET JOB DESCRIPTION:
+{JOB_DESCRIPTION}
+
+PROMPT INSTRUCTIONS:
+1. Deeply analyze the TARGET JOB DESCRIPTION against the CANDIDATE RESUME SUMMARY above.
+2. Craft 2-3 compelling, highly persuasive paragraphs that explain exactly why the candidate is the ideal match for {COMPANY_NAME}'s {JOB_TITLE} role, grabbing HR's attention immediately.
+3. Highlight 3-4 key achievements, skills, and metrics extracted from the resume that directly align with the core requirements of this role.
+4. Maintain a warm, confident, highly professional tone designed to impress HR/Recruiters.
+5. EXCLUSIVELY extract candidate's Contact Name, Phone, Email, LinkedIn URL, and Portfolio URL directly from the CANDIDATE RESUME SUMMARY text above. DO NOT use any default values. If any contact detail (such as phone, email, linkedin, or portfolio) is missing from the resume text, leave that specific line completely blank.
+
+STRICT SIGNATURE & LAYOUT FORMAT (Follow this exact signature format at the end):
+
+Dear Hiring Manager,
+
+[High-converting introductory paragraph analyzing JD + Resume to attract HR]
 
 Key Highlights & Relevant Achievements:
 • [Achievement 1 with metric tailored to JD]
@@ -235,20 +275,29 @@ Key Highlights & Relevant Achievements:
 
 [Closing paragraph requesting an interview/discussion]
 
-LinkedIn: https://linkedin.com/in/ma8694 | Portfolio: https://ahmedmohammed8694.wixsite.com/myportfolio | Resume: {RESUME_URL}
-
 Best regards,
-Mohammed Ahmed | +918686871994 | ahmed.mohammed8694@gmail.com
+[Candidate Full Name extracted strictly from Resume]
+[Candidate Phone extracted strictly from Resume, or leave blank if missing]
+[Candidate Email extracted strictly from Resume, or leave blank if missing]
+LinkedIn: [Candidate LinkedIn URL extracted strictly from Resume, or leave blank if missing]
+Portfolio: [Candidate Portfolio URL extracted strictly from Resume, or leave blank if missing]
+Resume: {RESUME_URL}
 
 Return ONLY the clean body text without markdown code backticks (\`\`\`), without subject line header, without preamble.`;
     }
 
-    function getCustomAiPromptTemplate() {
+    function getCustomAiPromptTemplate(type = "email") {
         try {
-            const gmPrompt = typeof GM_getValue === "function" ? GM_getValue("customAiPrompt", "") : "";
-            const lsPrompt = typeof localStorage !== "undefined" ? localStorage.getItem("customAiPrompt", "") : "";
-            return (gmPrompt || lsPrompt || "").trim() || getDefaultAiPromptTemplate();
-        } catch (e) { return getDefaultAiPromptTemplate(); }
+            const key = type === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
+            let val = typeof GM_getValue === "function" ? GM_getValue(key, "") : "";
+            if (!val && type === "email") {
+                val = typeof GM_getValue === "function" ? GM_getValue("customAiPrompt", "") : "";
+            }
+            if (!val && typeof localStorage !== "undefined") {
+                val = localStorage.getItem(key) || (type === "email" ? localStorage.getItem("customAiPrompt") : "");
+            }
+            return (val || "").trim() || getDefaultAiPromptTemplate(type);
+        } catch (e) { return getDefaultAiPromptTemplate(type); }
     }
 
     // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
@@ -287,7 +336,7 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
             ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
             : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).";
 
-        const template = getCustomAiPromptTemplate();
+        const template = getCustomAiPromptTemplate(type);
         const prompt = template
             .replace(/\{RESUME_TEXT\}/g, RESUME_TEXT)
             .replace(/\{RESUME_URL\}/g, activeResumeLink)
@@ -337,10 +386,11 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
         const old = document.getElementById("ai-prompt-modal");
         if (old) old.remove();
 
-        const currentPrompt = getCustomAiPromptTemplate();
+        let activeTab = "email";
+
         const modal = document.createElement("div");
         modal.id = "ai-prompt-modal";
-        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:460px;max-height:88vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:500px;max-height:90vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
 
         modal.innerHTML = `
             <div style="padding:18px;">
@@ -349,21 +399,44 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
                     <span id="closePromptModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
                 </div>
 
+                <!-- Tabs -->
+                <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:8px;">
+                    <button id="emailPromptTabBtn" style="flex:1;background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:8px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        ✉️ Email Prompt
+                    </button>
+                    <button id="waPromptTabBtn" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:8px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        💬 WhatsApp Prompt
+                    </button>
+                </div>
+
                 <div style="background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,0.25);border-radius:10px;padding:10px;margin-bottom:12px;font-size:11px;color:#8b949e;line-height:1.5;">
                     <strong style="color:#79c0ff;">💡 Available Dynamic Placeholders:</strong><br>
                     <code style="color:#f2cc60;">{RESUME_TEXT}</code>, <code style="color:#f2cc60;">{RESUME_URL}</code>, <code style="color:#f2cc60;">{JOB_TITLE}</code>, <code style="color:#f2cc60;">{COMPANY_NAME}</code>, <code style="color:#f2cc60;">{JOB_DESCRIPTION}</code>, <code style="color:#f2cc60;">{STYLE_INSTRUCTIONS}</code>
                 </div>
 
-                <div style="margin-bottom:14px;">
-                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
-                        Active AI System Prompt:
+                <!-- AI Prompt Refiner Chat Box -->
+                <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px;margin-bottom:12px;">
+                    <label style="display:block;font-weight:600;color:#79c0ff;margin-bottom:4px;font-size:11px;">
+                        🤖 Ask Gemini to Refine / Generate Prompt:
                     </label>
-                    <textarea id="aiPromptTextarea" style="width:100%;height:280px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:11px;line-height:1.45;outline:none;resize:vertical;">${currentPrompt}</textarea>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="aiRefineInput" placeholder="e.g. Make it shorter, focus more on sales metrics, make it aggressive..." style="flex:1;padding:8px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:11.5px;outline:none;" />
+                        <button id="aiRefineBtn" style="background:#238636;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:11px;white-space:nowrap;">
+                            ✨ Generate
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label id="promptTextareaLabel" style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
+                        Active Email System Prompt:
+                    </label>
+                    <textarea id="aiPromptTextarea" style="width:100%;height:250px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:11px;line-height:1.45;outline:none;resize:vertical;"></textarea>
                 </div>
 
                 <div style="display:flex;gap:8px;">
                     <button id="savePromptBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        💾 Save Custom Prompt
+                        💾 Save Active Prompt
                     </button>
                     <button id="resetPromptBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
                         🔄 Reset Default
@@ -374,26 +447,135 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
         document.body.appendChild(modal);
 
+        const textarea = modal.querySelector("#aiPromptTextarea");
+        const textareaLabel = modal.querySelector("#promptTextareaLabel");
+        const emailTabBtn = modal.querySelector("#emailPromptTabBtn");
+        const waTabBtn = modal.querySelector("#waPromptTabBtn");
+
+        function loadTabPrompt(type) {
+            activeTab = type;
+            if (type === "email") {
+                emailTabBtn.style.background = "#1f6feb";
+                emailTabBtn.style.color = "#fff";
+                emailTabBtn.style.border = "none";
+                waTabBtn.style.background = "#21262d";
+                waTabBtn.style.color = "#8b949e";
+                waTabBtn.style.border = "1px solid #30363d";
+                textareaLabel.textContent = "Active Email System Prompt:";
+                textarea.value = getCustomAiPromptTemplate("email");
+            } else {
+                waTabBtn.style.background = "#2ea043";
+                waTabBtn.style.color = "#fff";
+                waTabBtn.style.border = "none";
+                emailTabBtn.style.background = "#21262d";
+                emailTabBtn.style.color = "#8b949e";
+                emailTabBtn.style.border = "1px solid #30363d";
+                textareaLabel.textContent = "Active WhatsApp System Prompt:";
+                textarea.value = getCustomAiPromptTemplate("whatsapp");
+            }
+        }
+
+        loadTabPrompt("email");
+
+        emailTabBtn.onclick = () => loadTabPrompt("email");
+        waTabBtn.onclick = () => loadTabPrompt("whatsapp");
+
         modal.querySelector("#closePromptModal").onclick = () => modal.remove();
 
         modal.querySelector("#savePromptBtn").onclick = () => {
-            const newVal = modal.querySelector("#aiPromptTextarea").value.trim();
+            const newVal = textarea.value.trim();
+            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
             if (typeof GM_setValue === "function") {
-                GM_setValue("customAiPrompt", newVal);
+                GM_setValue(key, newVal);
+                if (activeTab === "email") GM_setValue("customAiPrompt", newVal);
             }
-            try { localStorage.setItem("customAiPrompt", newVal); } catch (e) { }
-            alert("✅ Custom AI Prompt saved!\n\nGemini will now use your personalized prompt for creating Emails & WhatsApp messages.");
+            try {
+                localStorage.setItem(key, newVal);
+                if (activeTab === "email") localStorage.setItem("customAiPrompt", newVal);
+            } catch (e) { }
+            alert(`✅ ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} Custom AI Prompt saved!\n\nGemini will now use this prompt template for creating ${activeTab === "whatsapp" ? "WhatsApp messages" : "Emails"}.`);
             modal.remove();
         };
 
         modal.querySelector("#resetPromptBtn").onclick = () => {
-            const defPrompt = getDefaultAiPromptTemplate();
-            modal.querySelector("#aiPromptTextarea").value = defPrompt;
+            const defPrompt = getDefaultAiPromptTemplate(activeTab);
+            textarea.value = defPrompt;
+            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
             if (typeof GM_setValue === "function") {
-                GM_setValue("customAiPrompt", "");
+                GM_setValue(key, "");
+                if (activeTab === "email") GM_setValue("customAiPrompt", "");
             }
-            try { localStorage.setItem("customAiPrompt", ""); } catch (e) { }
-            alert("🔄 Prompt reset to default template.");
+            try {
+                localStorage.setItem(key, "");
+                if (activeTab === "email") localStorage.setItem("customAiPrompt", "");
+            } catch (e) { }
+            alert(`🔄 ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} prompt reset to default template.`);
+        };
+
+        modal.querySelector("#aiRefineBtn").onclick = () => {
+            const instruction = modal.querySelector("#aiRefineInput").value.trim();
+            if (!instruction) {
+                alert("⚠️ Please enter a command/instruction for Gemini (e.g. 'Make it shorter and emphasize sales metrics').");
+                return;
+            }
+
+            const apiKey = getGeminiApiKey();
+            if (!apiKey) {
+                alert("🔑 Please set your Gemini API Key first!");
+                showGeminiKeyModal();
+                return;
+            }
+
+            const refineBtn = modal.querySelector("#aiRefineBtn");
+            const origBtnText = refineBtn.textContent;
+            refineBtn.disabled = true;
+            refineBtn.textContent = "⏳ Gemini is refining...";
+
+            const currentText = textarea.value.trim();
+            const promptForRefiner = `You are an expert AI prompt engineer.
+The user wants to update their AI system prompt for generating job application ${activeTab.toUpperCase()} messages.
+
+CURRENT PROMPT TEMPLATE:
+${currentText}
+
+USER UPDATE COMMAND/INSTRUCTION:
+${instruction}
+
+REQUIREMENTS FOR NEW PROMPT TEMPLATE:
+1. Revise and improve the system prompt template based on the user's instruction.
+2. YOU MUST KEEP the dynamic placeholders intact so they can be replaced at runtime: {RESUME_TEXT}, {RESUME_URL}, {JOB_TITLE}, {COMPANY_NAME}, {JOB_DESCRIPTION}, {STYLE_INSTRUCTIONS}.
+3. Return ONLY the new prompt template text without markdown code blocks, preamble, or commentary.`;
+
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: GEMINI_API_URL,
+                headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
+                anonymous: true,
+                data: JSON.stringify({
+                    contents: [{ parts: [{ text: promptForRefiner }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
+                }),
+                onload: function (response) {
+                    refineBtn.disabled = false;
+                    refineBtn.textContent = origBtnText;
+                    const data = parseJsonSafe(response.responseText || "");
+                    const newPromptText = data && data.candidates && data.candidates[0] && data.candidates[0].content
+                        && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+                        ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
+                    if (newPromptText) {
+                        textarea.value = newPromptText;
+                        modal.querySelector("#aiRefineInput").value = "";
+                        alert(`✨ New ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} prompt generated by Gemini! Review and click 'Save Active Prompt'.`);
+                    } else {
+                        alert("❌ Failed to generate refined prompt. Please check your Gemini API Key.");
+                    }
+                },
+                onerror: function (err) {
+                    refineBtn.disabled = false;
+                    refineBtn.textContent = origBtnText;
+                    alert("❌ Gemini API call failed. Please check network connection and API key.");
+                }
+            });
         };
     }
 
@@ -490,6 +672,101 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
             generateAiMessage(job, "email", (newText, usedFallback) => {
                 regenBtn.disabled = false;
                 regenBtn.textContent = "🔄 Regenerate AI Email";
+                textarea.value = newText;
+
+                if (usedFallback) {
+                    statusTag.textContent = "⚠️ Static Fallback Template Used";
+                } else {
+                    statusTag.textContent = "✨ Fresh AI Version Generated!";
+                }
+            });
+        };
+    }
+
+    function showWhatsAppPreviewModal(job, initialText) {
+        const old = document.getElementById("wa-preview-modal");
+        if (old) old.remove();
+
+        const modal = document.createElement("div");
+        modal.id = "wa-preview-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:480px;max-height:90vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+
+        const hrPhone = job.phone || "";
+
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#2ea043;font-size:14px;">💬 Preview WhatsApp Message</strong>
+                    <span id="closeWaPreviewModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;font-weight:600;color:#8b949e;margin-bottom:4px;font-size:11px;">
+                        Phone Number (HR / Recruiter):
+                    </label>
+                    <input type="text" id="waPhoneInput" value="${hrPhone}" placeholder="e.g. 919876543210 (optional)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#2ea043;font-size:12px;outline:none;" />
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <label style="font-weight:600;color:#8b949e;font-size:11px;">
+                            WhatsApp Message (Editable):
+                        </label>
+                        <span id="waAiStatusTag" style="color:#79c0ff;font-size:10px;">✨ AI Tailored for ${job.company || "Role"}</span>
+                    </div>
+                    <textarea id="waContentTextarea" style="width:100%;height:220px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;outline:none;resize:vertical;">${initialText}</textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button id="sendWaNowBtn" style="flex:2;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:12px;">
+                        🚀 Send WhatsApp Message
+                    </button>
+                    <button id="regenAiWaBtn" style="flex:1.5;background:#1f6feb;color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        🔄 Regenerate AI Message
+                    </button>
+                    <button id="copyWaTextBtn" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
+                        📋 Copy
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closeWaPreviewModal").onclick = () => modal.remove();
+
+        modal.querySelector("#sendWaNowBtn").onclick = () => {
+            const rawPhone = modal.querySelector("#waPhoneInput").value.trim();
+            const bodyText = modal.querySelector("#waContentTextarea").value.trim();
+            const cp = rawPhone.replace(/\D/g, "");
+            const waLink = cp ? `https://wa.me/${cp}?text=${encodeURIComponent(bodyText)}` : `https://wa.me/?text=${encodeURIComponent(bodyText)}`;
+
+            handleLoggedAction({ applyStatus: "Applied via WhatsApp", hrPhone: rawPhone }, () => {
+                window.open(waLink, "_blank");
+                modal.remove();
+            });
+        };
+
+        modal.querySelector("#copyWaTextBtn").onclick = () => {
+            const bodyText = modal.querySelector("#waContentTextarea").value.trim();
+            if (typeof GM_setClipboard === "function") {
+                GM_setClipboard(bodyText);
+            }
+            alert("📋 WhatsApp message copied to clipboard!");
+        };
+
+        modal.querySelector("#regenAiWaBtn").onclick = () => {
+            const regenBtn = modal.querySelector("#regenAiWaBtn");
+            const statusTag = modal.querySelector("#waAiStatusTag");
+            const textarea = modal.querySelector("#waContentTextarea");
+
+            regenBtn.disabled = true;
+            regenBtn.textContent = "⏳ Regenerating...";
+            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+
+            generateAiMessage(job, "whatsapp", (newText, usedFallback) => {
+                regenBtn.disabled = false;
+                regenBtn.textContent = "🔄 Regenerate AI Message";
                 textarea.value = newText;
 
                 if (usedFallback) {
@@ -1070,10 +1347,13 @@ Key Strengths:
 * CRM Automation: 95% efficiency improvement.
 * Program Delivery: 20% faster timelines.
 
-LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${getActiveResumeLink()}
-
 Best regards,
-${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
+${PROFILE.name}
+${PROFILE.phone}
+${PROFILE.email}
+LinkedIn: ${PROFILE.linkedin}
+Portfolio: ${PROFILE.portfolio}
+Resume: ${getActiveResumeLink()}`;
 
     const waBody = i => `Dear Hiring Manager,
 I'm ${PROFILE.name}, reaching out regarding the ${i.title} role at ${i.company}.
@@ -1084,10 +1364,13 @@ Key Achievements:
 - 20% faster program delivery
 - MCA qualified, 90% first-contact issue resolution
 
-LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${getActiveResumeLink()}
-
 Best regards,
-${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
+${PROFILE.name}
+${PROFILE.phone}
+${PROFILE.email}
+LinkedIn: ${PROFILE.linkedin}
+Portfolio: ${PROFILE.portfolio}
+Resume: ${getActiveResumeLink()}`;
 
     const coverLetter = i => {
         const d = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
@@ -1473,15 +1756,11 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         shadow.getElementById("waBtn").onclick = () => {
             const waBtnEl = shadow.getElementById("waBtn");
             const originalText = waBtnEl.textContent;
-            handleLoggedAction({ applyStatus: "Applied on WhatsApp" }, job => {
-                waBtnEl.disabled = true; waBtnEl.textContent = "\u23F3 Writing...";
-                generateAiMessage(job, "whatsapp", (text, usedFallback) => {
-                    waBtnEl.disabled = false; waBtnEl.textContent = originalText;
-                    if (usedFallback) console.warn("[Job Assistant] WhatsApp message used static fallback (Gemini unavailable).");
-                    const cp = String(job.phone || "").replace(/\D/g, "");
-                    const link = cp ? `https://wa.me/${cp}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
-                    window.open(link);
-                });
+            waBtnEl.disabled = true; waBtnEl.textContent = "⏳ Writing...";
+            const job = refreshCurrentJob();
+            generateAiMessage(job, "whatsapp", (text, usedFallback) => {
+                waBtnEl.disabled = false; waBtnEl.textContent = originalText;
+                showWhatsAppPreviewModal(job, text);
             });
         };
         shadow.getElementById("mailBtn").onclick = () => {
