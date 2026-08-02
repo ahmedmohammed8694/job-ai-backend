@@ -1,8 +1,9 @@
 import express from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import { OAuth2Client } from "google-auth-library";
+import { randomUUID } from "crypto";
+import { DatabaseSync } from "node:sqlite";
 
 dotenv.config();
 
@@ -19,38 +20,88 @@ app.use(express.json());
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 //////////////////////////////////////////////////////////////////
-// MongoDB Connection
+// Database Configuration (Cloudflare D1 / Local SQLite Fallback)
 //////////////////////////////////////////////////////////////////
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => {
-    console.error("❌ MongoDB Error:", err);
-    process.exit(1);
-  });
+const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CF_DATABASE_ID = process.env.CLOUDFLARE_DATABASE_ID;
+const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
-//////////////////////////////////////////////////////////////////
-// Schema
-//////////////////////////////////////////////////////////////////
+const isCloudflareConfigured = Boolean(CF_ACCOUNT_ID && CF_DATABASE_ID && CF_API_TOKEN);
 
-const ApplicationSchema = new mongoose.Schema({
-  userEmail: { type: String, required: true },
-  company: String,
-  jobTitle: String,
-  location: String,
-  applyLink: String,
-  resumeScore: Number,
-  status: {
-    type: String,
-    default: "Applied"
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+let localDb = null;
+
+if (isCloudflareConfigured) {
+  console.log("☁️  Using Cloudflare D1 Database");
+} else {
+  console.log("📁 Cloudflare credentials missing in .env - Falling back to local SQLite (data.sqlite)");
+  localDb = new DatabaseSync("data.sqlite");
+  localDb.exec(`
+    CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      userEmail TEXT NOT NULL,
+      company TEXT,
+      jobTitle TEXT,
+      location TEXT,
+      applyLink TEXT,
+      resumeScore REAL,
+      status TEXT DEFAULT 'Applied',
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+/**
+ * Execute SQL Query on Cloudflare D1 REST API or Local SQLite
+ */
+async function executeQuery(sql, params = []) {
+  if (isCloudflareConfigured) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${CF_DATABASE_ID}/query`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${CF_API_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ sql, params })
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      const errorMsg = data.errors?.[0]?.message || "Cloudflare D1 Query Failed";
+      throw new Error(errorMsg);
+    }
+    return data.result[0]?.results || [];
+  } else {
+    // Local SQLite fallback using node:sqlite
+    const isSelect = sql.trim().toUpperCase().startsWith("SELECT");
+    const stmt = localDb.prepare(sql);
+    if (isSelect) {
+      return stmt.all(...params);
+    } else {
+      stmt.run(...params);
+      return [];
+    }
   }
-});
+}
 
-const Application = mongoose.model("Application", ApplicationSchema);
+// Auto-initialize D1 table if using Cloudflare D1
+if (isCloudflareConfigured) {
+  executeQuery(`
+    CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      userEmail TEXT NOT NULL,
+      company TEXT,
+      jobTitle TEXT,
+      location TEXT,
+      applyLink TEXT,
+      resumeScore REAL,
+      status TEXT DEFAULT 'Applied',
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+  `).then(() => console.log("✅ Cloudflare D1 Schema Initialized"))
+    .catch((err) => console.error("⚠️ Cloudflare D1 Schema Init Error:", err.message));
+}
 
 //////////////////////////////////////////////////////////////////
 // Auth Middleware
@@ -82,22 +133,31 @@ async function verifyToken(req, res, next) {
 
 // Health Check
 app.get("/", (req, res) => {
-  res.json({ status: "Backend running successfully 🚀" });
+  res.json({
+    status: "Backend running successfully 🚀",
+    database: isCloudflareConfigured ? "Cloudflare D1" : "Local SQLite (data.sqlite)"
+  });
 });
 
 // Track Application
 app.post("/api/track", verifyToken, async (req, res) => {
   try {
-    const application = new Application({
-      userEmail: req.user.email,
-      ...req.body
-    });
+    const { company, jobTitle, location, applyLink, resumeScore, status } = req.body;
+    const id = randomUUID();
+    const userEmail = req.user.email;
+    const appStatus = status || "Applied";
+    const createdAt = new Date().toISOString();
 
-    await application.save();
+    await executeQuery(
+      `INSERT INTO applications (id, userEmail, company, jobTitle, location, applyLink, resumeScore, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, userEmail, company, jobTitle, location, applyLink, resumeScore, appStatus, createdAt]
+    );
 
-    res.json({ success: true });
+    res.json({ success: true, id });
 
   } catch (err) {
+    console.error("Error saving application:", err);
     res.status(500).json({ error: "Failed to save application" });
   }
 });
@@ -105,12 +165,15 @@ app.post("/api/track", verifyToken, async (req, res) => {
 // Get Applications
 app.get("/api/applications", verifyToken, async (req, res) => {
   try {
-    const apps = await Application.find({ userEmail: req.user.email })
-      .sort({ createdAt: -1 });
+    const apps = await executeQuery(
+      `SELECT * FROM applications WHERE userEmail = ? ORDER BY createdAt DESC`,
+      [req.user.email]
+    );
 
     res.json(apps);
 
   } catch (err) {
+    console.error("Error fetching applications:", err);
     res.status(500).json({ error: "Failed to fetch applications" });
   }
 });
@@ -118,13 +181,18 @@ app.get("/api/applications", verifyToken, async (req, res) => {
 // Update Status
 app.put("/api/update-status/:id", verifyToken, async (req, res) => {
   try {
-    await Application.findByIdAndUpdate(req.params.id, {
-      status: req.body.status
-    });
+    const { status } = req.body;
+    const { id } = req.params;
+
+    await executeQuery(
+      `UPDATE applications SET status = ? WHERE id = ? AND userEmail = ?`,
+      [status, id, req.user.email]
+    );
 
     res.json({ success: true });
 
   } catch (err) {
+    console.error("Error updating status:", err);
     res.status(500).json({ error: "Failed to update status" });
   }
 });
