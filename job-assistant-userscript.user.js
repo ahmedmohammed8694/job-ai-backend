@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.05
+// @name         Job Assistant Premium Naukri & LinkedIn V01.09
 // @namespace    http://tampermonkey.net/
-// @version      01.05
-// @description  Stable UI + Cloudflare D1 Database & R2 Storage integration.
+// @version      01.09
+// @description  Upgraded Gemini 1.5 Flash AI email engine + full structured bullet points & signatures.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -30,6 +30,7 @@
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_registerMenuCommand
 // ==/UserScript==
 
 (function () {
@@ -115,7 +116,7 @@ Product Adoption & Engagement, Windows Troubleshooting
     // Get a free key at https://aistudio.google.com/apikey then run once in console:
     //   GM_setValue('geminiApiKey','YOUR_KEY_HERE')
     // Or just paste it below between the quotes.
-    const GEMINI_MODEL = "gemini-flash-latest";
+    const GEMINI_MODEL = "gemini-1.5-flash";
     const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
     function getGeminiApiKey() {
@@ -201,6 +202,55 @@ Product Adoption & Engagement, Windows Troubleshooting
         };
     }
 
+    function getDefaultAiPromptTemplate() {
+        return `You are an elite executive career advisor writing a highly persuasive, customized job application email for candidate Mohammed Ahmed applying for the {JOB_TITLE} position at {COMPANY_NAME}.
+
+CANDIDATE RESUME SUMMARY:
+{RESUME_TEXT}
+
+TARGET JOB DETAILS:
+- Role Title: {JOB_TITLE}
+- Company Name: {COMPANY_NAME}
+
+TARGET JOB DESCRIPTION:
+{JOB_DESCRIPTION}
+
+PROMPT INSTRUCTIONS:
+1. Deeply analyze the TARGET JOB DESCRIPTION against Mohammed Ahmed's candidate profile (8+ years in Relationship Management, Account Management, Inside Sales, Client Retention & Operations).
+2. Write a compelling, highly professional application email tailored specifically to this position and company.
+3. Include a bulleted section ("Key Highlights & Relevant Achievements:") highlighting 3-4 quantified achievements from the resume that directly align with the core requirements of this role.
+4. Maintain a warm, confident, articulate tone.
+5. End with the candidate's exact links and professional closing signature.
+
+REQUIRED OUTPUT STRUCTURE (Strictly follow this exact layout):
+
+Dear Hiring Manager,
+
+[Opening paragraph expressing strong interest in {JOB_TITLE} at {COMPANY_NAME}, linking background to company goals]
+
+Key Highlights & Relevant Achievements:
+• [Achievement 1 with metric tailored to JD]
+• [Achievement 2 with metric tailored to JD]
+• [Achievement 3 with metric tailored to JD]
+
+[Closing paragraph requesting an interview/discussion]
+
+LinkedIn: https://linkedin.com/in/ma8694 | Portfolio: https://ahmedmohammed8694.wixsite.com/myportfolio | Resume: {RESUME_URL}
+
+Best regards,
+Mohammed Ahmed | +918686871994 | ahmed.mohammed8694@gmail.com
+
+Return ONLY the clean body text without markdown code backticks (\`\`\`), without subject line header, without preamble.`;
+    }
+
+    function getCustomAiPromptTemplate() {
+        try {
+            const gmPrompt = typeof GM_getValue === "function" ? GM_getValue("customAiPrompt", "") : "";
+            const lsPrompt = typeof localStorage !== "undefined" ? localStorage.getItem("customAiPrompt", "") : "";
+            return (gmPrompt || lsPrompt || "").trim() || getDefaultAiPromptTemplate();
+        } catch (e) { return getDefaultAiPromptTemplate(); }
+    }
+
     // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
     // Re-scrapes the JD fresh every single call — no caching — so each job gets its own analysis.
     // onDone(text, usedFallback) — usedFallback=true means Gemini failed and we returned the static template.
@@ -231,31 +281,270 @@ Product Adoption & Engagement, Windows Troubleshooting
             return;
         }
 
+        const activeResumeLink = getActiveResumeLink();
+
         const styleNote = type === "email"
-            ? "Write it as a formal application EMAIL (no subject line, just the body). 180-260 words."
-            : "Write it as a short, friendly WHATSAPP message. Under 120 words, no markdown formatting, plain text only.";
+            ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
+            : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).";
 
-        const prompt = `You are helping a candidate named Mohammed Ahmed write a personalized job application message.
+        const template = getCustomAiPromptTemplate();
+        const prompt = template
+            .replace(/\{RESUME_TEXT\}/g, RESUME_TEXT)
+            .replace(/\{RESUME_URL\}/g, activeResumeLink)
+            .replace(/\{JOB_TITLE\}/g, freshTitle)
+            .replace(/\{COMPANY_NAME\}/g, freshCompany)
+            .replace(/\{JOB_DESCRIPTION\}/g, freshJd || "Job Description not fully available — customize based on Job Title and Company.")
+            .replace(/\{STYLE_INSTRUCTIONS\}/g, styleNote);
 
-CANDIDATE RESUME:
-${RESUME_TEXT}
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: GEMINI_API_URL,
+            headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
+            anonymous: true,
+            data: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
+            }),
+            onload: function (response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
+                    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+                    ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
+                if (text) {
+                    console.log("[Job Assistant][Gemini] Generated fresh", type, "message (", text.length, "chars ) for", freshTitle);
+                    onDone(text, false);
+                } else {
+                    console.error("[Job Assistant] Gemini returned no usable text, falling back to template.", data);
+                    onDone(staticFallback, true);
+                }
+            },
+            onerror: function (err) {
+                console.error("[Job Assistant] Gemini API call failed, falling back to template.", err);
+                onDone(staticFallback, true);
+            }
+        });
+    }
 
-JOB TITLE: ${freshTitle}
-COMPANY: ${freshCompany}
+    function getCustomAiPromptTemplate() {
+        try {
+            const gmPrompt = typeof GM_getValue === "function" ? GM_getValue("customAiPrompt", "") : "";
+            const lsPrompt = typeof localStorage !== "undefined" ? localStorage.getItem("customAiPrompt") : "";
+            return (gmPrompt || lsPrompt || "").trim() || getDefaultAiPromptTemplate();
+        } catch (e) { return getDefaultAiPromptTemplate(); }
+    }
 
-JOB DESCRIPTION:
-${freshJd || "(not available — write a generic but strong message based on the job title and company alone)"}
+    function showPromptManagerModal() {
+        const old = document.getElementById("ai-prompt-modal");
+        if (old) old.remove();
 
-TASK: Analyze THIS SPECIFIC job description against the resume. Pick the 3-4 most relevant achievements/skills from the resume that best match what THIS job is asking for, and write a compelling, tailored application message. Do not write a generic message — reference specifics from the job description above wherever possible.
+        const currentPrompt = getCustomAiPromptTemplate();
+        const modal = document.createElement("div");
+        modal.id = "ai-prompt-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:460px;max-height:88vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
 
-${styleNote}
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#58a6ff;font-size:14px;">✏️ AI Prompt Template Manager</strong>
+                    <span id="closePromptModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
 
-Rules:
-- Address it "Dear Hiring Manager,"
-- Do NOT invent facts not present in the resume.
-- End with: Mohammed Ahmed, ${PROFILE.phone}
-- Include these links on their own lines before the sign-off: LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${PROFILE.resume}
-- Return ONLY the message text, no preamble, no explanation, no markdown code fences.`;
+                <div style="background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,0.25);border-radius:10px;padding:10px;margin-bottom:12px;font-size:11px;color:#8b949e;line-height:1.5;">
+                    <strong style="color:#79c0ff;">💡 Available Dynamic Placeholders:</strong><br>
+                    <code style="color:#f2cc60;">{RESUME_TEXT}</code>, <code style="color:#f2cc60;">{RESUME_URL}</code>, <code style="color:#f2cc60;">{JOB_TITLE}</code>, <code style="color:#f2cc60;">{COMPANY_NAME}</code>, <code style="color:#f2cc60;">{JOB_DESCRIPTION}</code>, <code style="color:#f2cc60;">{STYLE_INSTRUCTIONS}</code>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
+                        Active AI System Prompt:
+                    </label>
+                    <textarea id="aiPromptTextarea" style="width:100%;height:280px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:11px;line-height:1.45;outline:none;resize:vertical;">${currentPrompt}</textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;">
+                    <button id="savePromptBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        💾 Save Custom Prompt
+                    </button>
+                    <button id="resetPromptBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
+                        🔄 Reset Default
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closePromptModal").onclick = () => modal.remove();
+
+        modal.querySelector("#savePromptBtn").onclick = () => {
+            const newVal = modal.querySelector("#aiPromptTextarea").value.trim();
+            if (typeof GM_setValue === "function") {
+                GM_setValue("customAiPrompt", newVal);
+            }
+            try { localStorage.setItem("customAiPrompt", newVal); } catch (e) { }
+            alert("✅ Custom AI Prompt saved!\n\nGemini will now use your personalized prompt for creating Emails & WhatsApp messages.");
+            modal.remove();
+        };
+
+        modal.querySelector("#resetPromptBtn").onclick = () => {
+            const defPrompt = getDefaultAiPromptTemplate();
+            modal.querySelector("#aiPromptTextarea").value = defPrompt;
+            if (typeof GM_setValue === "function") {
+                GM_setValue("customAiPrompt", "");
+            }
+            try { localStorage.setItem("customAiPrompt", ""); } catch (e) { }
+            alert("🔄 Prompt reset to default template.");
+        };
+    }
+
+    function showEmailPreviewModal(job, initialText) {
+        const old = document.getElementById("email-preview-modal");
+        if (old) old.remove();
+
+        const modal = document.createElement("div");
+        modal.id = "email-preview-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:480px;max-height:90vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+
+        const defaultSubject = `Application for ${job.title || "Job Role"} - ${job.company || "Company"}`;
+        const hrEmail = job.email || "";
+
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#58a6ff;font-size:14px;">✉️ Preview Application Email</strong>
+                    <span id="closeEmailPreviewModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;font-weight:600;color:#8b949e;margin-bottom:4px;font-size:11px;">
+                        To (HR / Recruiter Email):
+                    </label>
+                    <input type="email" id="emailToInput" value="${hrEmail}" placeholder="hr@company.com (optional)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-size:12px;outline:none;" />
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;font-weight:600;color:#8b949e;margin-bottom:4px;font-size:11px;">
+                        Subject:
+                    </label>
+                    <input type="text" id="emailSubjectInput" value="${defaultSubject}" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;outline:none;" />
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <label style="font-weight:600;color:#8b949e;font-size:11px;">
+                            Email Content (Editable):
+                        </label>
+                        <span id="aiStatusTag" style="color:#79c0ff;font-size:10px;">✨ AI Tailored for ${job.company || "Role"}</span>
+                    </div>
+                    <textarea id="emailContentTextarea" style="width:100%;height:220px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;outline:none;resize:vertical;">${initialText}</textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button id="sendEmailNowBtn" style="flex:2;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:12px;">
+                        🚀 Send Email
+                    </button>
+                    <button id="regenAiEmailBtn" style="flex:1.5;background:#1f6feb;color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        🔄 Regenerate AI Email
+                    </button>
+                    <button id="copyEmailTextBtn" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
+                        📋 Copy
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closeEmailPreviewModal").onclick = () => modal.remove();
+
+        modal.querySelector("#sendEmailNowBtn").onclick = () => {
+            const recipient = modal.querySelector("#emailToInput").value.trim();
+            const subject = modal.querySelector("#emailSubjectInput").value.trim();
+            const bodyText = modal.querySelector("#emailContentTextarea").value.trim();
+
+            const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+
+            handleLoggedAction({ applyStatus: "Applied via Email", hrEmail: recipient }, () => {
+                window.location.href = mailtoUrl;
+                modal.remove();
+            });
+        };
+
+        modal.querySelector("#copyEmailTextBtn").onclick = () => {
+            const bodyText = modal.querySelector("#emailContentTextarea").value.trim();
+            if (typeof GM_setClipboard === "function") {
+                GM_setClipboard(bodyText);
+            }
+            alert("📋 Email text copied to clipboard!");
+        };
+
+        modal.querySelector("#regenAiEmailBtn").onclick = () => {
+            const regenBtn = modal.querySelector("#regenAiEmailBtn");
+            const statusTag = modal.querySelector("#aiStatusTag");
+            const textarea = modal.querySelector("#emailContentTextarea");
+
+            regenBtn.disabled = true;
+            regenBtn.textContent = "⏳ Regenerating...";
+            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+
+            generateAiMessage(job, "email", (newText, usedFallback) => {
+                regenBtn.disabled = false;
+                regenBtn.textContent = "🔄 Regenerate AI Email";
+                textarea.value = newText;
+
+                if (usedFallback) {
+                    statusTag.textContent = "⚠️ Static Fallback Template Used";
+                } else {
+                    statusTag.textContent = "✨ Fresh AI Version Generated!";
+                }
+            });
+        };
+    }
+
+    // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
+    // Re-scrapes the JD fresh every single call — no caching — so each job gets its own analysis.
+    // onDone(text, usedFallback) — usedFallback=true means Gemini failed and we returned the static template.
+    function generateAiMessage(info, type, onDone) {
+        // Force a fresh scrape right now — don't trust info.jdText, it may be stale from an earlier click
+        // (LinkedIn's SPA can leave the URL/DOM signature unchanged briefly when switching jobs in the list).
+        const freshJd = cleanStructuredText(extractJobDescriptionText() || info.jdText || info.jobDescription || "").slice(0, 6000);
+        const freshTitle = extractJobRole() || info.title || "N/A";
+        const freshCompany = extractCompanyNameFromPage() || info.company || "N/A";
+
+        console.log("[Job Assistant][Gemini] Generating", type, "for:", freshTitle, "@", freshCompany, "| JD length:", freshJd.length);
+        if (freshJd.length < 100) {
+            console.warn("[Job Assistant][Gemini] JD extraction looks too short/empty — the AI message may not be well-tailored for this job. Try scrolling the JD into view before clicking.");
+        }
+
+        let apiKey = getGeminiApiKey();
+        const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
+        const staticFallback = type === "email" ? emailBody(infoForFallback) : waBody(infoForFallback);
+
+        if (!apiKey) {
+            showGeminiKeyModal();
+            apiKey = getGeminiApiKey();
+        }
+
+        if (!apiKey) {
+            console.warn("[Job Assistant] No Gemini API key set — using static template fallback.");
+            onDone(staticFallback, true);
+            return;
+        }
+
+        const activeResumeLink = getActiveResumeLink();
+
+        const styleNote = type === "email"
+            ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
+            : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).";
+
+        const template = getCustomAiPromptTemplate();
+        const prompt = template
+            .replace(/\{RESUME_TEXT\}/g, RESUME_TEXT)
+            .replace(/\{RESUME_URL\}/g, activeResumeLink)
+            .replace(/\{JOB_TITLE\}/g, freshTitle)
+            .replace(/\{COMPANY_NAME\}/g, freshCompany)
+            .replace(/\{JOB_DESCRIPTION\}/g, freshJd || "Job Description not fully available — customize based on Job Title and Company.")
+            .replace(/\{STYLE_INSTRUCTIONS\}/g, styleNote);
 
         GM_xmlhttpRequest({
             method: "POST",
@@ -767,6 +1056,10 @@ Rules:
         });
     }
 
+    function getActiveResumeLink() {
+        return (typeof GM_getValue === "function" ? GM_getValue("lastUploadedResumeUrl", "") : (typeof localStorage !== "undefined" ? localStorage.getItem("lastUploadedResumeUrl") : "")) || PROFILE.resume;
+    }
+
     const emailBody = i => `Dear Hiring Manager,
 
 I am writing to express my strong interest in the ${i.title} position at ${i.company}. With over eight years of experience as a Relationship Manager and Customer Specialist, I have a proven track record of driving long-term retention and optimizing service delivery.
@@ -777,14 +1070,13 @@ Key Strengths:
 * CRM Automation: 95% efficiency improvement.
 * Program Delivery: 20% faster timelines.
 
-🔗 LinkedIn: ${PROFILE.linkedin}
-🌐 Portfolio: ${PROFILE.portfolio}
-📄 Resume: ${PROFILE.resume}
+LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${getActiveResumeLink()}
 
-Best regards, Mohammed Ahmed | ${PROFILE.phone}`;
+Best regards,
+${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
 
     const waBody = i => `Dear Hiring Manager,
-I'm Mohammed Ahmed, reaching out regarding the ${i.title} role at ${i.company}.
+I'm ${PROFILE.name}, reaching out regarding the ${i.title} role at ${i.company}.
 
 Key Achievements:
 - 97% client satisfaction & 95% retention
@@ -792,16 +1084,15 @@ Key Achievements:
 - 20% faster program delivery
 - MCA qualified, 90% first-contact issue resolution
 
-🔗 LinkedIn: ${PROFILE.linkedin}
-📄 Resume: ${PROFILE.resume}
-🌐 Portfolio: ${PROFILE.portfolio}
+LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${getActiveResumeLink()}
 
-Best regards, Mohammed Ahmed | ${PROFILE.phone}`;
+Best regards,
+${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
 
     const coverLetter = i => {
         const d = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-        return `Mohammed Ahmed | Hyderabad, Telangana | ${PROFILE.phone} | ${PROFILE.email}
-LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio}
+        return `${PROFILE.name} | Hyderabad, Telangana | ${PROFILE.phone} | ${PROFILE.email}
+LinkedIn: ${PROFILE.linkedin} | Portfolio: ${PROFILE.portfolio} | Resume: ${getActiveResumeLink()}
 ${d}
 
 Dear Hiring Manager,
@@ -810,7 +1101,8 @@ I am writing to express my strong interest in the ${i.title} position at ${i.com
 
 At Iamneo.ai, I improved delivery timelines by 20%. At Turito Inc., I achieved 97% satisfaction and 95% retention. At Vedantu, I managed 300+ student accounts with 95% renewal rates.
 
-Sincerely, Mohammed Ahmed`;
+Best regards,
+${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
     };
 
     function buildDirectWhatsappLink(info, phone) {
@@ -1053,20 +1345,18 @@ Sincerely, Mohammed Ahmed`;
 
     // ── MAIN INIT ──
     function init() {
-        if (!document.body) { setTimeout(init, 500); return; }
+        if (!document.body) { setTimeout(init, 300); return; }
 
-        // Remove existing host if re-running
+        // Remove existing host if detached from body
         const oldHost = document.getElementById("job-assistant-host");
-        if (oldHost) {
-            // Panel already exists — just refresh data
+        if (oldHost && document.body.contains(oldHost)) {
             try {
                 const inf = refreshCurrentJob(true);
                 updateJobInfoDisplay(inf); updateAtsDisplay(inf.atsScore);
             } catch (e) { }
-            if (!hasMeaningfulJobData(STATE.currentJob) && STATE.startupRetryCount < 8) {
-                STATE.startupRetryCount++; setTimeout(init, 1500);
-            } else STATE.startupRetryCount = 0;
             return;
+        } else if (oldHost) {
+            try { oldHost.remove(); } catch(e) {}
         }
 
         const isLinkedIn = isLinkedInPortal();
@@ -1150,7 +1440,8 @@ Sincerely, Mohammed Ahmed`;
 
         // Section 3 — AI & Settings
         body.appendChild(makeSection("s3-label", "3. AI Configuration", [
-            { id: "keyBtn", text: "🔑 Gemini API Key", full: true }
+            { id: "keyBtn", text: "🔑 API Key" },
+            { id: "promptBtn", text: "✏️ AI Prompt" }
         ]));
 
         // Section 4 — HR Info (LinkedIn only)
@@ -1196,13 +1487,11 @@ Sincerely, Mohammed Ahmed`;
         shadow.getElementById("mailBtn").onclick = () => {
             const mailBtnEl = shadow.getElementById("mailBtn");
             const originalText = mailBtnEl.textContent;
-            handleLoggedAction({ applyStatus: "Applied on Email" }, job => {
-                mailBtnEl.disabled = true; mailBtnEl.textContent = "\u23F3 Writing...";
-                generateAiMessage(job, "email", (text, usedFallback) => {
-                    mailBtnEl.disabled = false; mailBtnEl.textContent = originalText;
-                    if (usedFallback) console.warn("[Job Assistant] Email used static fallback (Gemini unavailable).");
-                    window.location.href = `mailto:${job.email}?subject=${encodeURIComponent("Application for " + job.title)}&body=${encodeURIComponent(text)}`;
-                });
+            mailBtnEl.disabled = true; mailBtnEl.textContent = "⏳ Writing...";
+            const job = refreshCurrentJob();
+            generateAiMessage(job, "email", (text, usedFallback) => {
+                mailBtnEl.disabled = false; mailBtnEl.textContent = originalText;
+                showEmailPreviewModal(job, text);
             });
         };
         shadow.getElementById("cvBtn").onclick = () => {
@@ -1253,6 +1542,7 @@ Sincerely, Mohammed Ahmed`;
         };
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
         shadow.getElementById("keyBtn").onclick = () => { showGeminiKeyModal(); };
+        shadow.getElementById("promptBtn").onclick = () => { showPromptManagerModal(); };
         if (isLinkedIn) {
             shadow.getElementById("recruiterBtn").onclick = () => {
                 handleLoggedAction({ applyStatus: "Applied on Portal" }, () => showRecruiterModal(getLinkedInHiringTeam()));
@@ -1271,14 +1561,28 @@ Sincerely, Mohammed Ahmed`;
         } else STATE.startupRetryCount = 0;
     }
 
-    if (document.readyState === "complete") { refreshLiveCounter(); }
-    else { window.addEventListener("load", () => refreshLiveCounter(), { once: true }); }
+    if (typeof GM_registerMenuCommand === "function") {
+        GM_registerMenuCommand("🤖 Open / Show Job Assistant Panel", () => {
+            const h = document.getElementById("job-assistant-host");
+            if (h && STATE.panel) {
+                h.style.display = "block";
+                STATE.panel.style.display = "block";
+            } else {
+                init();
+            }
+        });
+    }
+
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+        init();
+    } else {
+        document.addEventListener("DOMContentLoaded", init, { once: true });
+        window.addEventListener("load", init, { once: true });
+    }
 
     function waitForBodyThenInit() {
-        if (!document.body) { setTimeout(waitForBodyThenInit, 200); return; }
-        const isLI = location.hostname.includes("linkedin.com");
-        setTimeout(init, isLI ? 6000 : 3000);
-        if (isLI) setTimeout(init, 12000);
+        if (!document.body) { setTimeout(waitForBodyThenInit, 100); return; }
+        init();
     }
     waitForBodyThenInit();
 
