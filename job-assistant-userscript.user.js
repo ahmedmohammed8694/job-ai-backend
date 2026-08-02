@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.13
+// @name         Job Assistant Premium Naukri & LinkedIn V01.21
 // @namespace    http://tampermonkey.net/
-// @version      01.13
-// @description  Dual Email & WhatsApp prompt manager tabs + Gemini AI prompt refiner chat.
+// @version      01.21
+// @description  Added Gemini Model Dropdown Selector (2.0-flash, 1.5-flash, 1.5-pro) + Google Login & Logout account management.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -41,6 +41,158 @@
     const DASHBOARD_URL = SHEET_URL + "?view=dashboard";
     const STATS_URL = SHEET_URL + "?view=stats";
     const RESUME_LINK = "https://drive.google.com/file/d/1SHDFALAim2uSemURa-PQ8K7IoTPMf0U3/view";
+
+    function getWorkerUrl() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("customWorkerUrl", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("customWorkerUrl") : "";
+            return (gm || ls || "").trim() || WORKER_URL;
+        } catch(e) { return WORKER_URL; }
+    }
+
+    function showCloudflareSettingsModal() {
+        const old = document.getElementById("cf-settings-modal");
+        if (old) old.remove();
+
+        const currentEndpoint = getWorkerUrl();
+        const currentD1Id = (typeof GM_getValue === "function" ? GM_getValue("customD1Id", "") : (typeof localStorage !== "undefined" ? localStorage.getItem("customD1Id") : "")) || "5d6e5a34-b240-463a-a14a-519538fd2fc4";
+        const currentR2Bucket = (typeof GM_getValue === "function" ? GM_getValue("customR2Bucket", "") : (typeof localStorage !== "undefined" ? localStorage.getItem("customR2Bucket") : "")) || "jobassistantpremium";
+
+        const modal = document.createElement("div");
+        modal.id = "cf-settings-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+
+        const sqlSchema = `CREATE TABLE IF NOT EXISTS job_applications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email TEXT,
+  portal TEXT,
+  company TEXT,
+  title TEXT,
+  page_url TEXT,
+  apply_status TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);`;
+
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#f97316;font-size:14px;">☁️ Cloudflare D1 Database & R2 Storage Setup</strong>
+                    <span id="closeCfModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
+
+                <!-- STEP BY STEP GUIDE -->
+                <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.25);border-radius:10px;padding:12px;margin-bottom:14px;font-size:11px;line-height:1.55;">
+                    <strong style="color:#fb923c;font-size:11.5px;display:block;margin-bottom:6px;">📖 STEP-BY-STEP: HOW TO CREATE YOUR DATABASE IN CLOUDFLARE:</strong>
+                    <ol style="margin:0;padding-left:18px;color:#8b949e;">
+                        <li style="margin-bottom:4px;">
+                            Log in to your Cloudflare account:
+                            <div style="margin-top:4px;">
+                                <a href="https://dash.cloudflare.com/" target="_blank" style="display:inline-block;background:#f97316;color:#fff;text-decoration:none;padding:5px 10px;border-radius:6px;font-weight:600;font-size:10.5px;">🚀 Open Cloudflare Dashboard (dash.cloudflare.com) →</a>
+                            </div>
+                        </li>
+                        <li style="margin-bottom:4px;">
+                            <strong>Create D1 Database:</strong> Go to <code>Workers & Pages</code> ➔ <code>D1 SQL Database</code> ➔ Click <code>Create Database</code> ➔ Name it <code>job-ai-db</code>.
+                        </li>
+                        <li style="margin-bottom:4px;">
+                            <strong>Run Table Schema SQL:</strong> Open the Console tab of your database and run this query:
+                            <div style="margin-top:4px;display:flex;gap:6px;align-items:center;">
+                                <textarea id="sqlQueryTextarea" readonly style="flex:1;height:55px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#f2cc60;font-family:monospace;font-size:10px;padding:6px;outline:none;resize:none;">${sqlSchema}</textarea>
+                                <button id="copySqlBtn" style="background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:10px;white-space:nowrap;">📋 Copy SQL</button>
+                            </div>
+                        </li>
+                        <li style="margin-bottom:4px;">
+                            <strong>Create R2 Storage Bucket:</strong> Go to <code>R2 Object Storage</code> ➔ Click <code>Create Bucket</code> ➔ Name it <code>jobassistantpremium</code>.
+                        </li>
+                        <li>
+                            <strong>Deploy Worker Script:</strong> In your terminal run <code>npx wrangler deploy</code> and paste your deployed Worker URL below!
+                        </li>
+                    </ol>
+                </div>
+
+                <!-- INPUT FIELDS -->
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                        1. Cloudflare Worker Endpoint URL:
+                    </label>
+                    <input type="text" id="cfWorkerUrlInput" value="${currentEndpoint}" placeholder="https://job-ai-backend.ahmed-mohammed8694.workers.dev" style="width:100%;padding:9px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#f97316;font-family:monospace;font-size:11.5px;outline:none;" />
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                        2. Cloudflare D1 Database ID:
+                    </label>
+                    <input type="text" id="cfD1IdInput" value="${currentD1Id}" placeholder="e.g. 5d6e5a34-b240-463a-a14a-519538fd2fc4" style="width:100%;padding:9px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:11.5px;outline:none;" />
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                        3. Cloudflare R2 Bucket Name:
+                    </label>
+                    <input type="text" id="cfR2BucketInput" value="${currentR2Bucket}" placeholder="e.g. jobassistantpremium" style="width:100%;padding:9px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#79c0ff;font-family:monospace;font-size:11.5px;outline:none;" />
+                </div>
+
+                <div style="display:flex;gap:8px;">
+                    <button id="saveCfUrlBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        💾 Save Settings
+                    </button>
+                    <button id="resetCfUrlBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
+                        🔄 Reset Default
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closeCfModal").onclick = () => modal.remove();
+
+        modal.querySelector("#copySqlBtn").onclick = () => {
+            const sqlText = modal.querySelector("#sqlQueryTextarea").value;
+            if (typeof GM_setClipboard === "function") {
+                GM_setClipboard(sqlText);
+            }
+            alert("📋 SQL Table Creation Schema copied to clipboard!");
+        };
+
+        modal.querySelector("#saveCfUrlBtn").onclick = () => {
+            const newWorkerUrl = modal.querySelector("#cfWorkerUrlInput").value.trim();
+            const newD1Id = modal.querySelector("#cfD1IdInput").value.trim();
+            const newR2Bucket = modal.querySelector("#cfR2BucketInput").value.trim();
+
+            if (typeof GM_setValue === "function") {
+                GM_setValue("customWorkerUrl", newWorkerUrl);
+                GM_setValue("customD1Id", newD1Id);
+                GM_setValue("customR2Bucket", newR2Bucket);
+            }
+            try {
+                localStorage.setItem("customWorkerUrl", newWorkerUrl);
+                localStorage.setItem("customD1Id", newD1Id);
+                localStorage.setItem("customR2Bucket", newR2Bucket);
+            } catch(e) {}
+
+            alert("✅ Cloudflare Database & R2 Bucket Settings saved successfully!");
+            modal.remove();
+        };
+
+        modal.querySelector("#resetCfUrlBtn").onclick = () => {
+            modal.querySelector("#cfWorkerUrlInput").value = WORKER_URL;
+            modal.querySelector("#cfD1IdInput").value = "5d6e5a34-b240-463a-a14a-519538fd2fc4";
+            modal.querySelector("#cfR2BucketInput").value = "jobassistantpremium";
+
+            if (typeof GM_setValue === "function") {
+                GM_setValue("customWorkerUrl", "");
+                GM_setValue("customD1Id", "");
+                GM_setValue("customR2Bucket", "");
+            }
+            try {
+                localStorage.setItem("customWorkerUrl", "");
+                localStorage.setItem("customD1Id", "");
+                localStorage.setItem("customR2Bucket", "");
+            } catch(e) {}
+
+            alert("🔄 Cloudflare Settings reset to default.");
+        };
+    }
 
     const PROFILE = {
         name: "Mohammed Ahmed",
@@ -112,12 +264,65 @@ Client Communication & Relationship Building, MS Office
 Product Adoption & Engagement, Windows Troubleshooting
 `.trim();
 
-    // ── GEMINI AI CONFIG ──
-    // Get a free key at https://aistudio.google.com/apikey then run once in console:
-    //   GM_setValue('geminiApiKey','YOUR_KEY_HERE')
-    // Or just paste it below between the quotes.
-    const GEMINI_MODEL = "gemini-1.5-flash";
-    const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+    // ── GEMINI AI CONFIG & FALLBACK CHAIN ──
+    const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash-exp"];
+
+    function getSelectedGeminiModel() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("selectedGeminiModel", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("selectedGeminiModel") : "";
+            return (gm || ls || "").trim() || "gemini-2.0-flash";
+        } catch(e) { return "gemini-2.0-flash"; }
+    }
+
+    function callGeminiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelIndex = 0) {
+        let modelsToTry = GEMINI_MODELS.slice();
+        const preferred = getSelectedGeminiModel();
+        if (preferred && modelsToTry.includes(preferred)) {
+            modelsToTry = [preferred].concat(modelsToTry.filter(m => m !== preferred));
+        }
+
+        if (modelIndex >= modelsToTry.length) {
+            onError("All Gemini model endpoints failed.");
+            return;
+        }
+
+        const modelName = modelsToTry[modelIndex];
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: apiUrl,
+            headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
+            anonymous: true,
+            data: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens || 8192 }
+            }),
+            onload: function (response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
+                    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+                    ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
+
+                if (text) {
+                    onSuccess(text, modelName);
+                } else if (response.status === 404 && modelIndex + 1 < modelsToTry.length) {
+                    console.warn(`[Job Assistant] Model ${modelName} returned 404. Retrying with ${modelsToTry[modelIndex + 1]}...`);
+                    callGeminiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelIndex + 1);
+                } else {
+                    onError(response.responseText || `HTTP Status ${response.status}`, response.status);
+                }
+            },
+            onerror: function (err) {
+                if (modelIndex + 1 < modelsToTry.length) {
+                    callGeminiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelIndex + 1);
+                } else {
+                    onError("Network error calling Gemini API.");
+                }
+            }
+        });
+    }
 
     function getGeminiApiKey() {
         try {
@@ -132,43 +337,60 @@ Product Adoption & Engagement, Windows Troubleshooting
         if (old) old.remove();
 
         const currentKey = getGeminiApiKey();
+        const currentModel = getSelectedGeminiModel();
+
         const modal = document.createElement("div");
         modal.id = "gemini-key-modal";
-        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:380px;max-height:85vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-height:90vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
 
         modal.innerHTML = `
             <div style="padding:18px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #21262d;padding-bottom:10px;">
-                    <strong style="color:#58a6ff;font-size:14px;">🤖 Gemini AI Key Setup</strong>
+                    <strong style="color:#58a6ff;font-size:14px;">🤖 Gemini AI Account & Model Setup</strong>
                     <span id="closeGeminiModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
                 </div>
 
+                <!-- LOGIN WITH GOOGLE CARD -->
                 <div style="background:rgba(56,139,253,0.1);border:1px solid rgba(56,139,253,0.3);border-radius:10px;padding:12px;margin-bottom:14px;">
-                    <strong style="color:#79c0ff;font-size:11px;display:block;margin-bottom:6px;">📖 HOW TO GET A FREE GEMINI API KEY:</strong>
-                    <ol style="margin:0;padding-left:18px;color:#8b949e;line-height:1.6;font-size:11px;">
-                        <li>Click the green button below to open <strong>Google AI Studio</strong>.</li>
-                        <li>Log in with your Google account.</li>
-                        <li>Click <strong>"Create API Key"</strong>.</li>
-                        <li>Copy your generated key and paste it in the box below!</li>
-                    </ol>
-                    <div style="margin-top:10px;text-align:center;">
-                        <a href="https://aistudio.google.com/apikey" target="_blank" style="display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:600;font-size:11px;">🚀 Open Google AI Studio (Free) →</a>
+                    <strong style="color:#79c0ff;font-size:11.5px;display:block;margin-bottom:4px;">🔑 Google Sign-In & API Key Setup:</strong>
+                    <p style="margin:0 0 8px 0;color:#8b949e;font-size:11px;line-height:1.45;">
+                        Click below to sign in with your Google account on Google AI Studio to retrieve or generate your free Gemini API Key:
+                    </p>
+                    <div style="text-align:center;">
+                        <a href="https://aistudio.google.com/apikey" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;text-decoration:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:11.5px;box-shadow:0 4px 12px rgba(66,133,244,0.3);">
+                            🔑 Login with Google to Get Key (aistudio.google.com) →
+                        </a>
                     </div>
                 </div>
 
-                <div style="margin-bottom:14px;">
+                <!-- MODEL DROPDOWN SELECTOR -->
+                <div style="margin-bottom:12px;">
                     <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
-                        Paste your Gemini API Key here:
+                        🎯 Select Gemini AI Model:
                     </label>
-                    <input type="text" id="geminiApiKeyInput" value="${currentKey}" placeholder="Paste your key here (e.g. AIzaSy...)" style="width:100%;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:12px;outline:none;" />
+                    <select id="geminiModelSelect" style="width:100%;padding:9px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#f2cc60;font-size:11.5px;font-weight:600;outline:none;cursor:pointer;">
+                        <option value="gemini-2.0-flash" ${currentModel === "gemini-2.0-flash" ? "selected" : ""}>⚡ gemini-2.0-flash (Fast & Modern - Recommended)</option>
+                        <option value="gemini-1.5-flash-latest" ${currentModel === "gemini-1.5-flash-latest" ? "selected" : ""}>🚀 gemini-1.5-flash-latest (Stable Latest)</option>
+                        <option value="gemini-1.5-pro-latest" ${currentModel === "gemini-1.5-pro-latest" ? "selected" : ""}>🧠 gemini-1.5-pro-latest (Executive Reasoning)</option>
+                        <option value="gemini-2.0-flash-exp" ${currentModel === "gemini-2.0-flash-exp" ? "selected" : ""}>🔬 gemini-2.0-flash-exp (Experimental)</option>
+                    </select>
                 </div>
 
+                <!-- API KEY INPUT FIELD -->
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
+                        🔑 Saved Gemini API Key:
+                    </label>
+                    <input type="text" id="geminiApiKeyInput" value="${currentKey}" placeholder="Paste your API key here (e.g. AIzaSy...)" style="width:100%;padding:9px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:12px;outline:none;" />
+                </div>
+
+                <!-- BUTTON ACTIONS -->
                 <div style="display:flex;gap:8px;">
                     <button id="saveGeminiKeyBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        💾 Save API Key
+                        💾 Save Settings
                     </button>
                     <button id="clearGeminiKeyBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
-                        Clear
+                        🚪 Logout / Disconnect
                     </button>
                 </div>
             </div>
@@ -180,12 +402,19 @@ Product Adoption & Engagement, Windows Troubleshooting
 
         modal.querySelector("#saveGeminiKeyBtn").onclick = () => {
             const inputVal = modal.querySelector("#geminiApiKeyInput").value.trim();
+            const selectedModelVal = modal.querySelector("#geminiModelSelect").value;
+
             if (typeof GM_setValue === "function") {
                 GM_setValue("geminiApiKey", inputVal);
+                GM_setValue("selectedGeminiModel", selectedModelVal);
             }
-            try { localStorage.setItem("geminiApiKey", inputVal); } catch (e) { }
+            try {
+                localStorage.setItem("geminiApiKey", inputVal);
+                localStorage.setItem("selectedGeminiModel", selectedModelVal);
+            } catch (e) { }
+
             if (inputVal) {
-                alert("✅ Gemini API Key saved successfully!\n\nGemini AI will now analyze each Job Description & Resume dynamically for every job!");
+                alert(`✅ Gemini AI Settings Saved!\n\nModel: ${selectedModelVal}\nAPI Key: Saved`);
             } else {
                 alert("ℹ️ Gemini API Key cleared.");
             }
@@ -196,9 +425,13 @@ Product Adoption & Engagement, Windows Troubleshooting
             modal.querySelector("#geminiApiKeyInput").value = "";
             if (typeof GM_setValue === "function") {
                 GM_setValue("geminiApiKey", "");
+                GM_setValue("selectedGeminiModel", "");
             }
-            try { localStorage.setItem("geminiApiKey", ""); } catch (e) { }
-            alert("ℹ️ Gemini API Key cleared.");
+            try {
+                localStorage.setItem("geminiApiKey", "");
+                localStorage.setItem("selectedGeminiModel", "");
+            } catch (e) { }
+            alert("🚪 Logged out from Gemini API account. Stored API Key cleared.");
         };
     }
 
@@ -241,6 +474,53 @@ Portfolio: [Candidate Portfolio URL extracted strictly from Resume, or leave bla
 Resume: {RESUME_URL}
 
 Return ONLY the clean plain text message without markdown, code blocks, or preamble.`;
+        }
+
+        if (type === "cover") {
+            return `You are an elite executive career advisor writing a highly persuasive, customized COVER LETTER for a candidate applying for the {JOB_TITLE} position at {COMPANY_NAME}.
+
+CANDIDATE RESUME SUMMARY:
+{RESUME_TEXT}
+
+TARGET JOB DETAILS:
+- Role Title: {JOB_TITLE}
+- Company Name: {COMPANY_NAME}
+
+TARGET JOB DESCRIPTION:
+{JOB_DESCRIPTION}
+
+PROMPT INSTRUCTIONS:
+1. Deeply analyze the TARGET JOB DESCRIPTION against the CANDIDATE RESUME SUMMARY above.
+2. Write a formal, 3-paragraph executive Cover Letter (250-350 words) that articulates why candidate matches {COMPANY_NAME}'s {JOB_TITLE} role, grabbing HR's attention immediately.
+3. Include a bulleted section ("Key Highlights & Relevant Achievements:") highlighting 3-4 quantified achievements from the resume that directly solve the requirements in the JD.
+4. EXCLUSIVELY extract candidate's Contact Name, Phone, Email, LinkedIn URL, and Portfolio URL directly from the CANDIDATE RESUME SUMMARY text above. DO NOT use default values. If any contact detail is missing, leave that line blank.
+
+STRICT COVER LETTER LAYOUT & SIGNATURE FORMAT:
+
+[Candidate Full Name extracted strictly from Resume]
+[Candidate Phone extracted strictly from Resume, or leave blank if missing] | [Candidate Email extracted strictly from Resume, or leave blank if missing]
+LinkedIn: [Candidate LinkedIn URL extracted strictly from Resume] | Portfolio: [Candidate Portfolio URL extracted strictly from Resume] | Resume: {RESUME_URL}
+
+Dear Hiring Manager,
+
+[High-converting opening paragraph analyzing JD + Resume to attract HR]
+
+Key Highlights & Relevant Achievements:
+• [Achievement 1 with metric tailored to JD]
+• [Achievement 2 with metric tailored to JD]
+• [Achievement 3 with metric tailored to JD]
+
+[Closing paragraph requesting an interview/discussion]
+
+Best regards,
+[Candidate Full Name extracted strictly from Resume]
+[Candidate Phone extracted strictly from Resume, or leave blank if missing]
+[Candidate Email extracted strictly from Resume, or leave blank if missing]
+LinkedIn: [Candidate LinkedIn URL extracted strictly from Resume, or leave blank if missing]
+Portfolio: [Candidate Portfolio URL extracted strictly from Resume, or leave blank if missing]
+Resume: {RESUME_URL}
+
+Return ONLY the clean body text without markdown code backticks (\`\`\`), without preamble.`;
         }
 
         return `You are an elite executive career advisor writing a highly persuasive, customized job application email for a candidate applying for the {JOB_TITLE} position at {COMPANY_NAME}.
@@ -288,7 +568,7 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
     function getCustomAiPromptTemplate(type = "email") {
         try {
-            const key = type === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
+            const key = type === "whatsapp" ? "customAiPrompt_whatsapp" : (type === "cover" ? "customAiPrompt_cover" : "customAiPrompt_email");
             let val = typeof GM_getValue === "function" ? GM_getValue(key, "") : "";
             if (!val && type === "email") {
                 val = typeof GM_getValue === "function" ? GM_getValue("customAiPrompt", "") : "";
@@ -317,7 +597,7 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
         let apiKey = getGeminiApiKey();
         const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
-        const staticFallback = type === "email" ? emailBody(infoForFallback) : waBody(infoForFallback);
+        const staticFallback = type === "email" ? emailBody(infoForFallback) : (type === "cover" ? coverLetter(infoForFallback) : waBody(infoForFallback));
 
         if (!apiKey) {
             showGeminiKeyModal();
@@ -334,7 +614,7 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
         const styleNote = type === "email"
             ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
-            : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).";
+            : (type === "cover" ? "Write it as a formal, 3-paragraph executive COVER LETTER. 250-350 words." : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).");
 
         const template = getCustomAiPromptTemplate(type);
         const prompt = template
@@ -400,12 +680,15 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
                 </div>
 
                 <!-- Tabs -->
-                <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:8px;">
-                    <button id="emailPromptTabBtn" style="flex:1;background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:8px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        ✉️ Email Prompt
+                <div style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:8px;">
+                    <button id="emailPromptTabBtn" style="flex:1;background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:7px 4px;cursor:pointer;font-weight:600;font-size:11px;">
+                        ✉️ Email
                     </button>
-                    <button id="waPromptTabBtn" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:8px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        💬 WhatsApp Prompt
+                    <button id="waPromptTabBtn" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 4px;cursor:pointer;font-weight:600;font-size:11px;">
+                        💬 WhatsApp
+                    </button>
+                    <button id="coverPromptTabBtn" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 4px;cursor:pointer;font-weight:600;font-size:11px;">
+                        📄 Cover Letter
                     </button>
                 </div>
 
@@ -451,27 +734,34 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
         const textareaLabel = modal.querySelector("#promptTextareaLabel");
         const emailTabBtn = modal.querySelector("#emailPromptTabBtn");
         const waTabBtn = modal.querySelector("#waPromptTabBtn");
+        const coverTabBtn = modal.querySelector("#coverPromptTabBtn");
 
         function loadTabPrompt(type) {
             activeTab = type;
+            [emailTabBtn, waTabBtn, coverTabBtn].forEach(b => {
+                b.style.background = "#21262d";
+                b.style.color = "#8b949e";
+                b.style.border = "1px solid #30363d";
+            });
+
             if (type === "email") {
                 emailTabBtn.style.background = "#1f6feb";
                 emailTabBtn.style.color = "#fff";
                 emailTabBtn.style.border = "none";
-                waTabBtn.style.background = "#21262d";
-                waTabBtn.style.color = "#8b949e";
-                waTabBtn.style.border = "1px solid #30363d";
                 textareaLabel.textContent = "Active Email System Prompt:";
                 textarea.value = getCustomAiPromptTemplate("email");
-            } else {
+            } else if (type === "whatsapp") {
                 waTabBtn.style.background = "#2ea043";
                 waTabBtn.style.color = "#fff";
                 waTabBtn.style.border = "none";
-                emailTabBtn.style.background = "#21262d";
-                emailTabBtn.style.color = "#8b949e";
-                emailTabBtn.style.border = "1px solid #30363d";
                 textareaLabel.textContent = "Active WhatsApp System Prompt:";
                 textarea.value = getCustomAiPromptTemplate("whatsapp");
+            } else {
+                coverTabBtn.style.background = "#8b5cf6";
+                coverTabBtn.style.color = "#fff";
+                coverTabBtn.style.border = "none";
+                textareaLabel.textContent = "Active Cover Letter System Prompt:";
+                textarea.value = getCustomAiPromptTemplate("cover");
             }
         }
 
@@ -479,12 +769,13 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
         emailTabBtn.onclick = () => loadTabPrompt("email");
         waTabBtn.onclick = () => loadTabPrompt("whatsapp");
+        coverTabBtn.onclick = () => loadTabPrompt("cover");
 
         modal.querySelector("#closePromptModal").onclick = () => modal.remove();
 
         modal.querySelector("#savePromptBtn").onclick = () => {
             const newVal = textarea.value.trim();
-            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
+            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : (activeTab === "cover" ? "customAiPrompt_cover" : "customAiPrompt_email");
             if (typeof GM_setValue === "function") {
                 GM_setValue(key, newVal);
                 if (activeTab === "email") GM_setValue("customAiPrompt", newVal);
@@ -493,14 +784,14 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
                 localStorage.setItem(key, newVal);
                 if (activeTab === "email") localStorage.setItem("customAiPrompt", newVal);
             } catch (e) { }
-            alert(`✅ ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} Custom AI Prompt saved!\n\nGemini will now use this prompt template for creating ${activeTab === "whatsapp" ? "WhatsApp messages" : "Emails"}.`);
+            alert(`✅ ${activeTab === "whatsapp" ? "WhatsApp" : (activeTab === "cover" ? "Cover Letter" : "Email")} Custom AI Prompt saved!`);
             modal.remove();
         };
 
         modal.querySelector("#resetPromptBtn").onclick = () => {
             const defPrompt = getDefaultAiPromptTemplate(activeTab);
             textarea.value = defPrompt;
-            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : "customAiPrompt_email";
+            const key = activeTab === "whatsapp" ? "customAiPrompt_whatsapp" : (activeTab === "cover" ? "customAiPrompt_cover" : "customAiPrompt_email");
             if (typeof GM_setValue === "function") {
                 GM_setValue(key, "");
                 if (activeTab === "email") GM_setValue("customAiPrompt", "");
@@ -509,7 +800,7 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
                 localStorage.setItem(key, "");
                 if (activeTab === "email") localStorage.setItem("customAiPrompt", "");
             } catch (e) { }
-            alert(`🔄 ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} prompt reset to default template.`);
+            alert(`🔄 ${activeTab === "whatsapp" ? "WhatsApp" : (activeTab === "cover" ? "Cover Letter" : "Email")} prompt reset to default template.`);
         };
 
         modal.querySelector("#aiRefineBtn").onclick = () => {
@@ -546,36 +837,21 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 2. YOU MUST KEEP the dynamic placeholders intact so they can be replaced at runtime: {RESUME_TEXT}, {RESUME_URL}, {JOB_TITLE}, {COMPANY_NAME}, {JOB_DESCRIPTION}, {STYLE_INSTRUCTIONS}.
 3. Return ONLY the new prompt template text without markdown code blocks, preamble, or commentary.`;
 
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: GEMINI_API_URL,
-                headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-                anonymous: true,
-                data: JSON.stringify({
-                    contents: [{ parts: [{ text: promptForRefiner }] }],
-                    generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
-                }),
-                onload: function (response) {
+            callGeminiApi(promptForRefiner, apiKey, 8192,
+                (newPromptText, usedModel) => {
                     refineBtn.disabled = false;
                     refineBtn.textContent = origBtnText;
-                    const data = parseJsonSafe(response.responseText || "");
-                    const newPromptText = data && data.candidates && data.candidates[0] && data.candidates[0].content
-                        && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-                        ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
-                    if (newPromptText) {
-                        textarea.value = newPromptText;
-                        modal.querySelector("#aiRefineInput").value = "";
-                        alert(`✨ New ${activeTab === "whatsapp" ? "WhatsApp" : "Email"} prompt generated by Gemini! Review and click 'Save Active Prompt'.`);
-                    } else {
-                        alert("❌ Failed to generate refined prompt. Please check your Gemini API Key.");
-                    }
+                    textarea.value = newPromptText;
+                    modal.querySelector("#aiRefineInput").value = "";
+                    alert(`✨ New ${activeTab === "whatsapp" ? "WhatsApp" : (activeTab === "cover" ? "Cover Letter" : "Email")} prompt generated by Gemini (${usedModel})! Review and click 'Save Active Prompt'.`);
                 },
-                onerror: function (err) {
+                (errText, status) => {
                     refineBtn.disabled = false;
                     refineBtn.textContent = origBtnText;
-                    alert("❌ Gemini API call failed. Please check network connection and API key.");
+                    console.error("[Job Assistant][Gemini Refiner Error]", errText);
+                    alert("❌ Failed to generate refined prompt.\n\nError details from Gemini: " + (errText || "Unknown error"));
                 }
-            });
+            );
         };
     }
 
@@ -778,6 +1054,80 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         };
     }
 
+    function showCoverLetterPreviewModal(job, initialText) {
+        const old = document.getElementById("cover-preview-modal");
+        if (old) old.remove();
+
+        const modal = document.createElement("div");
+        modal.id = "cover-preview-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+
+        modal.innerHTML = `
+            <div style="padding:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                    <strong style="color:#a78bfa;font-size:14px;">📄 Preview Tailored Cover Letter</strong>
+                    <span id="closeCoverPreviewModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <label style="font-weight:600;color:#8b949e;font-size:11px;">
+                            Cover Letter Content (Editable):
+                        </label>
+                        <span id="coverAiStatusTag" style="color:#79c0ff;font-size:10px;">✨ AI Tailored for ${job.company || "Role"}</span>
+                    </div>
+                    <textarea id="coverContentTextarea" style="width:100%;height:320px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;outline:none;resize:vertical;">${initialText}</textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;">
+                    <button id="copyCoverNowBtn" style="flex:2;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:12px;">
+                        📋 Copy Cover Letter
+                    </button>
+                    <button id="regenAiCoverBtn" style="flex:1.5;background:#1f6feb;color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
+                        🔄 Regenerate AI Cover Letter
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#closeCoverPreviewModal").onclick = () => modal.remove();
+
+        modal.querySelector("#copyCoverNowBtn").onclick = () => {
+            const bodyText = modal.querySelector("#coverContentTextarea").value.trim();
+            if (typeof GM_setClipboard === "function") {
+                GM_setClipboard(bodyText);
+            }
+            handleLoggedAction({ applyStatus: "Cover Letter Generated" }, () => {
+                alert("📋 Tailored Cover Letter copied to clipboard!");
+                modal.remove();
+            });
+        };
+
+        modal.querySelector("#regenAiCoverBtn").onclick = () => {
+            const regenBtn = modal.querySelector("#regenAiCoverBtn");
+            const statusTag = modal.querySelector("#coverAiStatusTag");
+            const textarea = modal.querySelector("#coverContentTextarea");
+
+            regenBtn.disabled = true;
+            regenBtn.textContent = "⏳ Regenerating...";
+            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+
+            generateAiMessage(job, "cover", (newText, usedFallback) => {
+                regenBtn.disabled = false;
+                regenBtn.textContent = "🔄 Regenerate AI Cover Letter";
+                textarea.value = newText;
+
+                if (usedFallback) {
+                    statusTag.textContent = "⚠️ Static Fallback Template Used";
+                } else {
+                    statusTag.textContent = "✨ Fresh AI Version Generated!";
+                }
+            });
+        };
+    }
+
     // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
     // Re-scrapes the JD fresh every single call — no caching — so each job gets its own analysis.
     // onDone(text, usedFallback) — usedFallback=true means Gemini failed and we returned the static template.
@@ -795,7 +1145,7 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
         let apiKey = getGeminiApiKey();
         const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
-        const staticFallback = type === "email" ? emailBody(infoForFallback) : waBody(infoForFallback);
+        const staticFallback = type === "email" ? emailBody(infoForFallback) : (type === "cover" ? coverLetter(infoForFallback) : waBody(infoForFallback));
 
         if (!apiKey) {
             showGeminiKeyModal();
@@ -812,9 +1162,11 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
         const styleNote = type === "email"
             ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
-            : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).";
+            : (type === "cover"
+                ? "Write it as a formal, 3-paragraph executive COVER LETTER with bulleted highlights and vertical signature. 250-350 words."
+                : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).");
 
-        const template = getCustomAiPromptTemplate();
+        const template = getCustomAiPromptTemplate(type);
         const prompt = template
             .replace(/\{RESUME_TEXT\}/g, RESUME_TEXT)
             .replace(/\{RESUME_URL\}/g, activeResumeLink)
@@ -823,33 +1175,19 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             .replace(/\{JOB_DESCRIPTION\}/g, freshJd || "Job Description not fully available — customize based on Job Title and Company.")
             .replace(/\{STYLE_INSTRUCTIONS\}/g, styleNote);
 
-        GM_xmlhttpRequest({
-            method: "POST",
-            url: GEMINI_API_URL,
-            headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-            anonymous: true,
-            data: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 700 }
-            }),
-            onload: function (response) {
-                const data = parseJsonSafe(response.responseText || "");
-                const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
-                    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-                    ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
-                if (text) {
-                    console.log("[Job Assistant][Gemini] Generated fresh", type, "message (", text.length, "chars ) for", freshTitle);
-                    onDone(text, false);
-                } else {
-                    console.error("[Job Assistant] Gemini returned no usable text, falling back to template.", data);
-                    onDone(staticFallback, true);
-                }
+        callGeminiApi(prompt, apiKey, 8192,
+            (text, usedModel) => {
+                console.log("[Job Assistant][Gemini] Generated fresh", type, "message (", text.length, "chars ) for", freshTitle, "using model:", usedModel);
+                onDone(text, false);
             },
-            onerror: function (err) {
-                console.error("[Job Assistant] Gemini API call failed, falling back to template.", err);
+            (errText, status) => {
+                console.error("[Job Assistant] Gemini returned error, falling back to template.", status, errText);
+                if (status && status !== 200) {
+                    alert(`⚠️ Gemini API returned Status ${status}:\n\n${String(errText).slice(0, 300)}`);
+                }
                 onDone(staticFallback, true);
             }
-        });
+        );
     }
 
     const STOP_WORDS = new Set([
@@ -1721,10 +2059,11 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         fileInput.style.display = "none";
         shadow.appendChild(fileInput);
 
-        // Section 3 — AI & Settings
-        body.appendChild(makeSection("s3-label", "3. AI Configuration", [
+        // Section 3 — AI & Cloudflare Settings
+        body.appendChild(makeSection("s3-label", "3. AI & Cloudflare Settings", [
             { id: "keyBtn", text: "🔑 API Key" },
-            { id: "promptBtn", text: "✏️ AI Prompt" }
+            { id: "promptBtn", text: "✏️ AI Prompt" },
+            { id: "cfSettingsBtn", text: "⚙️ Cloudflare DB", full: true }
         ]));
 
         // Section 4 — HR Info (LinkedIn only)
@@ -1777,7 +2116,14 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             handleLoggedAction({ applyStatus: "Applied on Portal" }, () => { GM_setClipboard(PROFILE.resume); alert("Resume link copied!"); });
         };
         shadow.getElementById("coverBtn").onclick = () => {
-            handleLoggedAction({ applyStatus: "Applied on Portal" }, job => { GM_setClipboard(coverLetter(job)); alert("Cover Letter copied!"); });
+            const coverBtnEl = shadow.getElementById("coverBtn");
+            const originalText = coverBtnEl.textContent;
+            coverBtnEl.disabled = true; coverBtnEl.textContent = "⏳ Writing...";
+            const job = refreshCurrentJob();
+            generateAiMessage(job, "cover", (text, usedFallback) => {
+                coverBtnEl.disabled = false; coverBtnEl.textContent = originalText;
+                showCoverLetterPreviewModal(job, text);
+            });
         };
         shadow.getElementById("uploadR2Btn").onclick = () => {
             shadow.getElementById("resumeFileInput").click();
@@ -1822,6 +2168,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
         shadow.getElementById("keyBtn").onclick = () => { showGeminiKeyModal(); };
         shadow.getElementById("promptBtn").onclick = () => { showPromptManagerModal(); };
+        shadow.getElementById("cfSettingsBtn").onclick = () => { showCloudflareSettingsModal(); };
         if (isLinkedIn) {
             shadow.getElementById("recruiterBtn").onclick = () => {
                 handleLoggedAction({ applyStatus: "Applied on Portal" }, () => showRecruiterModal(getLinkedInHiringTeam()));

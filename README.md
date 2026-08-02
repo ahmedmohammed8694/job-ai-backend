@@ -101,6 +101,69 @@ Install the official **Tampermonkey** browser extension for your browser:
 
 ---
 
+## ☁️ How to Set Up Your Own Custom Cloudflare D1 Database & R2 Storage
+
+If you want to host your own private database and resume storage in your personal Cloudflare account:
+
+### Step 1: Log in to Cloudflare Dashboard
+Visit **[dash.cloudflare.com](https://dash.cloudflare.com/)** and log in or create a free account.
+
+### Step 2: Create a Cloudflare D1 SQL Database
+1. Go to **Workers & Pages** ➔ **D1 SQL Database**.
+2. Click **Create Database** and name it `job-ai-db`.
+3. Copy your generated **Database ID** (e.g. `5d6e5a34-b240-463a-a14a-519538fd2fc4`).
+4. Click **Console** tab in your D1 database dashboard and run this SQL query to create your table:
+   ```sql
+   CREATE TABLE IF NOT EXISTS job_applications (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_email TEXT,
+     portal TEXT,
+     company TEXT,
+     title TEXT,
+     page_url TEXT,
+     apply_status TEXT,
+     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+   );
+   ```
+
+### Step 3: Create a Cloudflare R2 Bucket
+1. Go to **R2 Object Storage** ➔ **Create Bucket**.
+2. Name it `jobassistantpremium`.
+3. In bucket settings, enable **Public R2.dev bucket URL** or connect your custom domain to allow inline resume viewing.
+
+### Step 4: Configure Wrangler & Deploy Worker
+1. Edit `wrangler.json` (or `wrangler.toml`) in your repository:
+   ```json
+   {
+     "name": "job-ai-backend",
+     "main": "server.js",
+     "compatibility_date": "2024-01-01",
+     "d1_databases": [
+       {
+         "binding": "DB",
+         "database_name": "job-ai-db",
+         "database_id": "<YOUR_D1_DATABASE_ID>"
+       }
+     ],
+     "r2_buckets": [
+       {
+         "binding": "R2",
+         "bucket_name": "jobassistantpremium"
+       }
+     ]
+   }
+   ```
+2. Log in and deploy:
+   ```bash
+   npx wrangler login
+   npx wrangler deploy
+   ```
+
+### Step 5: Update Worker URL in UserScript
+If you deployed your own worker, open **[job-assistant-userscript.user.js](job-assistant-userscript.user.js)** and click **`⚙️ Cloudflare DB`** on the Job Assistant widget panel, paste your custom Worker URL, and click **`💾 Save Worker URL`**!
+
+---
+
 ## 🔧 Backend Technical Architecture
 
 - **Live Worker Backend**: `https://job-ai-backend.ahmed-mohammed8694.workers.dev`
