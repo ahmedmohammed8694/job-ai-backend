@@ -40,6 +40,7 @@ if (!isCloudflareConfigured) {
         location TEXT,
         applyLink TEXT,
         resumeScore REAL,
+        resumeUrl TEXT,
         status TEXT DEFAULT 'Applied',
         createdAt TEXT DEFAULT (datetime('now'))
       );
@@ -132,15 +133,80 @@ async function verifyToken(c, next) {
 app.get("/", (c) => {
   return c.json({
     status: "Backend running successfully 🚀",
-    database: c.env?.DB ? "Cloudflare D1 (Worker Binding)" : (isCloudflareConfigured ? "Cloudflare D1 (REST API)" : "Local SQLite")
+    database: c.env?.DB ? "Cloudflare D1 (Worker Binding)" : (isCloudflareConfigured ? "Cloudflare D1 (REST API)" : "Local SQLite"),
+    storage: c.env?.R2_BUCKET ? "Cloudflare R2 (jobassistantpremium)" : "Local Storage"
   });
+});
+
+// Upload Resume to Cloudflare R2 Bucket (jobassistantpremium)
+app.post("/api/upload-resume", verifyToken, async (c) => {
+  try {
+    const user = c.get("user");
+    const formData = await c.req.formData();
+    const file = formData.get("resume");
+
+    if (!file || typeof file === "string") {
+      return c.json({ error: "No resume file provided" }, 400);
+    }
+
+    const filename = file.name || "resume.pdf";
+    const fileKey = `resumes/${user.email}/${randomUUID()}-${filename}`;
+    const contentType = file.type || "application/pdf";
+    const arrayBuffer = await file.arrayBuffer();
+
+    // Upload directly to Cloudflare R2 bucket
+    if (c.env?.R2_BUCKET) {
+      await c.env.R2_BUCKET.put(fileKey, arrayBuffer, {
+        httpMetadata: { contentType }
+      });
+    }
+
+    const fileUrl = `/api/resume/${encodeURIComponent(fileKey)}`;
+
+    return c.json({
+      success: true,
+      fileKey,
+      fileUrl,
+      fileName: filename,
+      size: file.size
+    });
+
+  } catch (err) {
+    console.error("Error uploading resume to R2:", err);
+    return c.json({ error: "Failed to upload resume" }, 500);
+  }
+});
+
+// Download/View Resume from Cloudflare R2 Bucket
+app.get("/api/resume/:key{.+}", async (c) => {
+  try {
+    const key = c.req.param("key");
+    if (!c.env?.R2_BUCKET) {
+      return c.json({ error: "R2 bucket is not available in local mode" }, 400);
+    }
+
+    const object = await c.env.R2_BUCKET.get(key);
+    if (!object) {
+      return c.json({ error: "File not found in R2 bucket" }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag);
+
+    return new Response(object.body, { headers });
+
+  } catch (err) {
+    console.error("Error retrieving resume from R2:", err);
+    return c.json({ error: "Failed to fetch resume" }, 500);
+  }
 });
 
 // Track Application
 app.post("/api/track", verifyToken, async (c) => {
   try {
     const body = await c.req.json();
-    const { company, jobTitle, location, applyLink, resumeScore, status } = body;
+    const { company, jobTitle, location, applyLink, resumeScore, resumeUrl, status } = body;
     const id = randomUUID();
     const user = c.get("user");
     const userEmail = user.email;
@@ -149,9 +215,9 @@ app.post("/api/track", verifyToken, async (c) => {
 
     await executeQuery(
       c,
-      `INSERT INTO applications (id, userEmail, company, jobTitle, location, applyLink, resumeScore, status, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, userEmail, company, jobTitle, location, applyLink, resumeScore, appStatus, createdAt]
+      `INSERT INTO applications (id, userEmail, company, jobTitle, location, applyLink, resumeScore, resumeUrl, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, userEmail, company, jobTitle, location, applyLink, resumeScore, resumeUrl || null, appStatus, createdAt]
     );
 
     return c.json({ success: true, id });

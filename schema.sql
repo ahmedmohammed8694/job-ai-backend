@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS applications (
   location TEXT,
   applyLink TEXT,
   resumeScore REAL,
+  resumeUrl TEXT,
   status TEXT DEFAULT 'Applied',
   createdAt TEXT DEFAULT (datetime('now'))
 );
