@@ -347,7 +347,11 @@ Product Adoption & Engagement, Windows Troubleshooting
                     onError("Network error calling Gemini API.");
                 }
             }
+        });
+    }
+
     // ── MULTI-AI PROVIDERS (GEMINI, OPENAI CHATGPT, XAI GROK) ──
+
     function getOpenAiApiKey() {
         try {
             const gm = typeof GM_getValue === "function" ? GM_getValue("openAiApiKey", "") : "";
@@ -450,9 +454,10 @@ Product Adoption & Engagement, Windows Troubleshooting
 
     // Smart Multi-AI Provider Failover Chain — uses vault keys with auto-rotation
     function callMultiProviderAiApi(prompt, maxTokens, onSuccess, onError) {
-        // Build ordered list of providers to try based on which have active vault keys
-        // Priority: gemini first (most free), then openai, grok, openrouter, claude
-        const PROVIDER_ORDER = ["gemini", "openai", "grok", "openrouter", "claude"];
+        // Build ordered list of providers: user-selected first, then rest
+        const ALL_ORDER = ["gemini", "openai", "grok", "openrouter", "claude"];
+        const userPick  = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
+        const PROVIDER_ORDER = [userPick, ...ALL_ORDER.filter(p => p !== userPick)];
 
         // Try a specific provider's vault keys in sequence
         async function tryProviderVault(providerId, remainingKeys, onProviderFail) {
@@ -463,7 +468,9 @@ Product Adoption & Engagement, Windows Troubleshooting
 
             const keyEntry = remainingKeys[0];
             const restKeys = remainingKeys.slice(1);
-            const model = keyEntry.model || gmGet("selectedModel_" + providerId, null);
+            // Prefer user-selected model from the dropdown, then key's saved model, then default
+            const userModel = gmGet("selectedModel_" + providerId, null);
+            const model = userModel || keyEntry.model || null;
 
             function onKeyFail(err, status) {
                 const is429 = (status === 429 || (err && err.toLowerCase && err.toLowerCase().includes("quota")));
@@ -597,6 +604,24 @@ Product Adoption & Engagement, Windows Troubleshooting
             const lsKey = typeof localStorage !== "undefined" ? localStorage.getItem("geminiApiKey") : "";
             return (gmKey || lsKey || "").trim();
         } catch (e) { return ""; }
+    }
+
+    function getSelectedGeminiModel() {
+        return gmGet("selectedModel_gemini", "gemini-2.0-flash") || "gemini-2.0-flash";
+    }
+
+    // Alias for backward-compat (keyBtn wires to this)
+    function showGeminiKeyModal() { showAiProviderModal(); }
+
+    // Persist selected provider + model
+    function setSelectedProvider(pid) { gmSet("selectedAiProvider", pid); }
+    function setSelectedModel(pid, model) { gmSet("selectedModel_" + pid, model); }
+
+    // Get the active key email for a given provider
+    function getActiveKeyEmail(pid) {
+        const keys = getLocalKeysForProvider(pid).filter(k => k.active !== false);
+        if (!keys.length) return "No key saved";
+        return keys[0].accountEmail || "(no email saved)";
     }
 
     // ── AI PROVIDER CONFIG ────────────────────────────────────────────────────
@@ -1106,20 +1131,22 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
             console.warn("[Job Assistant][Gemini] JD extraction looks too short/empty — the AI message may not be well-tailored for this job. Try scrolling the JD into view before clicking.");
         }
 
-        let apiKey = getGeminiApiKey();
+        const providerPref = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
+        const hasKeys = getLocalKeysForProvider(providerPref).some(k => k.active !== false) ||
+                        (providerPref === "gemini" && getGeminiApiKey()) ||
+                        (providerPref === "openai" && getOpenAiApiKey()) ||
+                        (providerPref === "grok" && getGrokApiKey());
+
         const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
         const staticFallback = type === "email" ? emailBody(infoForFallback) : (type === "cover" ? coverLetter(infoForFallback) : waBody(infoForFallback));
 
-        if (!apiKey) {
-            showGeminiKeyModal();
-            apiKey = getGeminiApiKey();
-        }
-
-        if (!apiKey) {
-            console.warn("[Job Assistant] No Gemini API key set — using static template fallback.");
+        if (!hasKeys) {
+            alert(`🔑 Please configure an API key for your selected provider (${providerPref.toUpperCase()}) in the 🤖 AI Provider Vault.`);
+            showAiProviderModal();
             onDone(staticFallback, true);
             return;
         }
+
 
         const activeResumeLink = getActiveResumeLink();
 
@@ -1619,62 +1646,7 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         };
     }
 
-    // Calls Gemini with the JD + resume, asking it to write a tailored email or WhatsApp message.
-    // Re-scrapes the JD fresh every single call — no caching — so each job gets its own analysis.
-    // onDone(text, usedFallback) — usedFallback=true means Gemini failed and we returned the static template.
-    function generateAiMessage(info, type, onDone) {
-        // Force a fresh scrape right now — don't trust info.jdText, it may be stale from an earlier click
-        // (LinkedIn's SPA can leave the URL/DOM signature unchanged briefly when switching jobs in the list).
-        const freshJd = cleanStructuredText(extractJobDescriptionText() || info.jdText || info.jobDescription || "").slice(0, 6000);
-        const freshTitle = extractJobRole() || info.title || "N/A";
-        const freshCompany = extractCompanyNameFromPage() || info.company || "N/A";
 
-        console.log("[Job Assistant][Gemini] Generating", type, "for:", freshTitle, "@", freshCompany, "| JD length:", freshJd.length);
-        if (freshJd.length < 100) {
-            console.warn("[Job Assistant][Gemini] JD extraction looks too short/empty — the AI message may not be well-tailored for this job. Try scrolling the JD into view before clicking.");
-        }
-
-        let apiKey = getGeminiApiKey();
-        const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
-        const staticFallback = type === "email" ? emailBody(infoForFallback) : (type === "cover" ? coverLetter(infoForFallback) : waBody(infoForFallback));
-
-        if (!apiKey) {
-            console.warn("[Job Assistant] No Gemini API key set — using static template fallback.");
-            onDone(staticFallback, true);
-            return;
-        }
-
-        const activeResumeLink = getActiveResumeLink();
-
-        const styleNote = type === "email"
-            ? "Write it as a formal, highly compelling application EMAIL (no subject line, just the body text). 180-250 words."
-            : (type === "cover"
-                ? "Write it as a formal, 3-paragraph executive COVER LETTER with bulleted highlights and vertical signature. 250-350 words."
-                : "Write it as a concise, high-converting WHATSAPP message. Under 110 words, plain text only (no markdown, no bold asterisks).");
-
-        const template = getCustomAiPromptTemplate(type);
-        const prompt = template
-            .replace(/\{RESUME_TEXT\}/g, RESUME_TEXT)
-            .replace(/\{RESUME_URL\}/g, activeResumeLink)
-            .replace(/\{JOB_TITLE\}/g, freshTitle)
-            .replace(/\{COMPANY_NAME\}/g, freshCompany)
-            .replace(/\{JOB_DESCRIPTION\}/g, freshJd || "Job Description not fully available — customize based on Job Title and Company.")
-            .replace(/\{STYLE_INSTRUCTIONS\}/g, styleNote);
-
-        callGeminiApi(prompt, apiKey, 8192,
-            (text, usedModel) => {
-                console.log("[Job Assistant][Gemini] Generated fresh", type, "message (", text.length, "chars ) for", freshTitle, "using model:", usedModel);
-                onDone(text, false);
-            },
-            (errText, status) => {
-                console.error("[Job Assistant] Gemini returned error, falling back to template.", status, errText);
-                if (status && status !== 200) {
-                    alert(`⚠️ Gemini API returned Status ${status}:\n\n${String(errText).slice(0, 300)}`);
-                }
-                onDone(staticFallback, true);
-            }
-        );
-    }
 
     const STOP_WORDS = new Set([
         "a", "an", "the", "and", "or", "but", "with", "without", "to", "of", "for", "from", "in", "on", "at",
@@ -1777,6 +1749,32 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             50% { box-shadow: 0 0 30px rgba(59,130,246,1); }
             100% { box-shadow: 0 0 18px rgba(59,130,246,.6); }
         }
+        #aiSelectorBar {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 10px;
+            padding: 8px 10px;
+            margin-bottom: 12px;
+        }
+        #aiSelectorBar .ai-bar-label {
+            font-size: 9px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 1px; color: #f2cc60; margin-bottom: 6px;
+        }
+        #aiSelectorBar select {
+            width: 100%; background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; color: #e2e8f0;
+            padding: 5px 6px; font-size: 10.5px; cursor: pointer;
+            outline: none; margin-bottom: 5px;
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        #aiSelectorBar select:last-of-type { margin-bottom: 4px; }
+        #aiActiveKeyInfo {
+            font-size: 10px; color: #3fb950;
+            display: flex; align-items: center; gap: 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        #aiActiveKeyInfo span { color: #58a6ff; }
     `;
 
     function parseJsonSafe(t) { try { return JSON.parse(t); } catch (e) { return null; } }
@@ -1825,6 +1823,12 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
     }
     function isLinkedInPortal() { return location.hostname.includes("linkedin.com"); }
     function isNaukriPortal() { return location.hostname.includes("naukri.com"); }
+
+    function getLinkedInDetailsContainer() {
+        return document.querySelector(
+            ".jobs-search__job-details, .scaffold-layout__detail, .jobs-details__main-content, .job-view-layout, main"
+        );
+    }
 
     function getCleanBodyClone() {
         if (!document.body) return null;
@@ -1887,8 +1891,11 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
     function extractJobDescriptionText() {
         const sels = getJobDescriptionSelectors();
         const seen = new Set(); let best = null;
+        const container = isLinkedInPortal() ? getLinkedInDetailsContainer() : null;
+        const root = container || document;
+
         sels.forEach((sel, idx) => {
-            document.querySelectorAll(sel).forEach(node => {
+            root.querySelectorAll(sel).forEach(node => {
                 const t = extractPlainNodeText(node, true);
                 const n = cleanStructuredText(t);
                 if (!n || n.length < 80) return;
@@ -1902,7 +1909,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             });
         });
         if (best && (best.hits > 0 || best.score >= 35)) { STATE.lastObservedJdText = best.text; return best.text; }
-        const fallback = sanitizeJobDescriptionText(getPageTextWithoutAssistant(true));
+        const fallbackText = container ? extractPlainNodeText(container, true) : getPageTextWithoutAssistant(true);
+        const fallback = sanitizeJobDescriptionText(fallbackText);
         if (fallback && fallback.length > 80) { STATE.lastObservedJdText = fallback; return fallback; }
         return STATE.lastObservedJdText || "";
     }
@@ -1933,7 +1941,14 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
     function extractJobRole() {
         const jt = extractFromJsonLd('title');
         if (jt) return cleanDisplayText(jt).replace(/^(Hiring for|Urgent hiring for)\s+/i, "");
-        if (isLinkedInPortal()) { const h = document.querySelector(".job-details-jobs-unified-top-card__job-title,.jobs-unified-top-card__job-title,h1"); return cleanDisplayText(h?.innerText || "").replace(/^(Hiring for|Urgent hiring for)\s+/i, ""); }
+        if (isLinkedInPortal()) {
+            const container = getLinkedInDetailsContainer();
+            const doc = container || document;
+            const h = doc.querySelector(".job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, h1, h2, [class*='job-title']");
+            if (h && h.innerText.trim()) {
+                return cleanDisplayText(h.innerText).replace(/^(Hiring for|Urgent hiring for)\s+/i, "");
+            }
+        }
         if (isNaukriPortal()) { const h = document.querySelector(".jd-header-title,.styles_jhc__title__6S6t4,h1"); return cleanDisplayText(h?.innerText || "").replace(/^(Hiring for|Urgent hiring for)\s+/i, ""); }
         return document.title.split("|")[0].split("-")[0].trim();
     }
@@ -1942,8 +1957,27 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         const jc = extractFromJsonLd('company');
         if (jc) return cleanCompanyName(jc);
         if (isLinkedInPortal()) {
-            for (const sel of [".job-details-jobs-unified-top-card__company-name a", ".jobs-unified-top-card__company-name a", ".topcard__org-name-link", ".job-details-jobs-unified-top-card__company-name"]) {
-                const el = document.querySelector(sel); if (el && el.innerText.trim()) return cleanCompanyName(el.innerText);
+            const container = getLinkedInDetailsContainer();
+            const doc = container || document;
+            for (const sel of [
+                ".job-details-jobs-unified-top-card__company-name a",
+                ".jobs-unified-top-card__company-name a",
+                ".topcard__org-name-link",
+                ".job-details-jobs-unified-top-card__company-name",
+                "a[href*='/company/']",
+                ".jobs-unified-top-card__company-name",
+                "[class*='company-name']"
+            ]) {
+                const el = doc.querySelector(sel);
+                if (el && el.innerText.trim()) return cleanCompanyName(el.innerText);
+            }
+            // Fallback: search primary description container for company link
+            const pd = doc.querySelector(".job-details-jobs-unified-top-card__primary-description, .jobs-unified-top-card__primary-description");
+            if (pd) {
+                const link = pd.querySelector("a[href*='/company/']");
+                if (link && link.innerText.trim()) return cleanCompanyName(link.innerText);
+                const firstPart = pd.innerText.split("·")[0].split("•")[0].trim();
+                if (firstPart && firstPart.length < 100) return cleanCompanyName(firstPart);
             }
         }
         if (isNaukriPortal()) {
@@ -1966,8 +2000,25 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         const jl = extractFromJsonLd('location');
         if (jl && isLikelyLocationText(jl)) return jl;
         if (isLinkedInPortal()) {
-            for (const sel of [".job-details-jobs-unified-top-card__bullet", ".jobs-unified-top-card__bullet", ".top-card-layout__bullet"]) {
-                for (const n of document.querySelectorAll(sel)) { const t = (n.innerText || "").trim(); if (isLikelyLocationText(t)) return t; }
+            const container = getLinkedInDetailsContainer();
+            const doc = container || document;
+            for (const sel of [
+                ".job-details-jobs-unified-top-card__bullet",
+                ".jobs-unified-top-card__bullet",
+                ".top-card-layout__bullet"
+            ]) {
+                for (const n of doc.querySelectorAll(sel)) {
+                    const t = (n.innerText || "").trim();
+                    if (isLikelyLocationText(t)) return t;
+                }
+            }
+            // Fallback: search primary description container for location
+            const pd = doc.querySelector(".job-details-jobs-unified-top-card__primary-description, .jobs-unified-top-card__primary-description");
+            if (pd) {
+                const parts = pd.innerText.split("·").map(p => p.trim());
+                for (const p of parts) {
+                    if (isLikelyLocationText(p)) return p;
+                }
             }
         }
         if (isNaukriPortal()) {
@@ -1986,7 +2037,9 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             }
         }
         if (isLinkedInPortal()) {
-            for (const b of document.querySelectorAll(".job-details-jobs-unified-top-card__job-insight,.job-details-jobs-unified-top-card__bullet")) {
+            const container = getLinkedInDetailsContainer();
+            const doc = container || document;
+            for (const b of doc.querySelectorAll(".job-details-jobs-unified-top-card__job-insight, .job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__job-insight, .jobs-unified-top-card__bullet")) {
                 const t = b.innerText;
                 if (t.includes("₹") || t.includes("$") || t.includes("£") || t.toLowerCase().includes("monthly") || t.toLowerCase().includes("yearly")) return t.trim();
             }
@@ -2545,9 +2598,79 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         fileInput.style.display = "none";
         shadow.appendChild(fileInput);
 
+        // ── AI AGENT SELECTOR BAR ──────────────────────────────────────────────
+        const aiBar = document.createElement("div");
+        aiBar.id = "aiSelectorBar";
+
+        const aiBarLabel = document.createElement("div");
+        aiBarLabel.className = "ai-bar-label";
+        aiBarLabel.textContent = "🤖 Active AI Agent & Model";
+        aiBar.appendChild(aiBarLabel);
+
+        // Provider dropdown
+        const providerSel = document.createElement("select");
+        providerSel.id = "aiProviderSelect";
+        const savedProvider = gmGet("selectedAiProvider", "gemini") || "gemini";
+        AI_PROVIDERS.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = `${p.icon} ${p.label}`;
+            opt.selected = (p.id === savedProvider);
+            providerSel.appendChild(opt);
+        });
+        aiBar.appendChild(providerSel);
+
+        // Model dropdown
+        const modelSel = document.createElement("select");
+        modelSel.id = "aiModelSelect";
+        aiBar.appendChild(modelSel);
+
+        // Active key email display
+        const keyInfo = document.createElement("div");
+        keyInfo.id = "aiActiveKeyInfo";
+        aiBar.appendChild(keyInfo);
+
+        body.appendChild(aiBar);
+
+        // Helper: populate model dropdown for a given provider id
+        function populateModelSelect(pid) {
+            const pDef = AI_PROVIDERS.find(p => p.id === pid);
+            modelSel.innerHTML = "";
+            const savedModel = gmGet("selectedModel_" + pid, "") || (pDef && pDef.models[0]) || "";
+            (pDef ? pDef.models : [savedModel]).forEach(m => {
+                const opt = document.createElement("option");
+                opt.value = m; opt.textContent = m; opt.selected = (m === savedModel);
+                modelSel.appendChild(opt);
+            });
+        }
+
+        // Helper: update key info row
+        function updateKeyInfo(pid) {
+            const email = getActiveKeyEmail(pid);
+            keyInfo.innerHTML = `🔑 Key: <span>${email}</span>`;
+        }
+
+        // Initial population
+        populateModelSelect(savedProvider);
+        updateKeyInfo(savedProvider);
+
+        // Provider change
+        providerSel.onchange = function() {
+            const pid = this.value;
+            setSelectedProvider(pid);
+            populateModelSelect(pid);
+            updateKeyInfo(pid);
+        };
+
+        // Model change
+        modelSel.onchange = function() {
+            const pid = providerSel.value;
+            setSelectedModel(pid, this.value);
+        };
+
         // Section 3 — AI & Cloudflare Settings
         body.appendChild(makeSection("s3-label", "3. AI & Cloudflare Settings", [
-            { id: "keyBtn", text: "🔑 API Key" },
+            { id: "keyBtn", text: "🔑 API Keys" },
             { id: "promptBtn", text: "✏️ AI Prompt" },
             { id: "cfSettingsBtn", text: "⚙️ Cloudflare DB", full: true }
         ]));
@@ -2652,7 +2775,16 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             }
         };
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
-        shadow.getElementById("keyBtn").onclick = () => { showGeminiKeyModal(); };
+        shadow.getElementById("keyBtn").onclick = () => {
+            showAiProviderModal();
+            // Refresh key info after modal closes (use mutation observer on modal removal)
+            const mo = new MutationObserver(() => {
+                const pid = shadow.getElementById("aiProviderSelect")?.value || gmGet("selectedAiProvider", "gemini");
+                if (shadow.getElementById("aiActiveKeyInfo")) updateKeyInfo(pid);
+            });
+            mo.observe(document.body, { childList: true });
+            setTimeout(() => mo.disconnect(), 60000);
+        };
         shadow.getElementById("promptBtn").onclick = () => { showPromptManagerModal(); };
         shadow.getElementById("cfSettingsBtn").onclick = () => { showCloudflareSettingsModal(); };
         if (isLinkedIn) {
