@@ -1109,6 +1109,7 @@ app.get("/dashboard", async (c) => {
           <tr>
             <th>Role</th>
             <th>Company</th>
+            <th>Portal</th>
             <th>Location</th>
             <th>Salary</th>
             <th>Email ID</th>
@@ -1172,6 +1173,10 @@ app.get("/dashboard", async (c) => {
             <a href="#" target="_blank" id="modalPortalLink">Open Link ↗</a>
           </div>
           <div class="detail-item">
+            <label>Apply Portal</label>
+            <span id="modalPortalName">N/A</span>
+          </div>
+          <div class="detail-item">
             <label>Resume Used</label>
             <a href="#" target="_blank" id="modalResumeLink">View Resume ↗</a>
           </div>
@@ -1212,6 +1217,45 @@ app.get("/dashboard", async (c) => {
   <script>
     const userApplications = ${JSON.stringify(apps)};
     let activeAppId = null;
+
+    function getPortalName(url) {
+      if (!url) return "Company Website";
+      try {
+        const hostname = new URL(url).hostname.toLowerCase();
+        const parts = hostname.split('.');
+        let mainDomain = parts[parts.length - 2];
+        if (parts.length >= 3 && (parts[parts.length - 2] === "co" || parts[parts.length - 2] === "com" || parts[parts.length - 2] === "org" || parts[parts.length - 2] === "net")) {
+          mainDomain = parts[parts.length - 3];
+        }
+        if (!mainDomain) return "Direct";
+        
+        const map = {
+          "linkedin": "LinkedIn",
+          "indeed": "Indeed",
+          "naukri": "Naukri",
+          "glassdoor": "Glassdoor",
+          "wellfound": "Wellfound",
+          "ziprecruiter": "ZipRecruiter",
+          "monster": "Monster",
+          "simplyhired": "SimplyHired",
+          "careerbuilder": "CareerBuilder",
+          "naukriyg": "Naukri",
+          "naukrirecruiter": "Naukri Recruiter",
+          "foundit": "FoundIt",
+          "hirist": "Hirist",
+          "internshala": "Internshala",
+          "shine": "Shine",
+          "upwork": "Upwork",
+          "fiverr": "Fiverr",
+          "github": "GitHub",
+          "instahyre": "Instahyre",
+          "timesjobs": "TimesJobs"
+        };
+        return map[mainDomain] || mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
+      } catch (e) {
+        return "Company Website";
+      }
+    }
 
     // Populate filter dropdowns dynamically
     let dropdownsPopulated = false;
@@ -1292,6 +1336,7 @@ app.get("/dashboard", async (c) => {
         "Job ID",
         "Role",
         "Company",
+        "Portal",
         "Location",
         "Salary",
         "HR Email",
@@ -1318,6 +1363,7 @@ app.get("/dashboard", async (c) => {
           app.id || "",
           app.jobTitle || "",
           app.company || "",
+          getPortalName(app.applyLink),
           app.location || "",
           app.salary || "",
           app.email || "",
@@ -1465,7 +1511,7 @@ app.get("/dashboard", async (c) => {
       document.getElementById("avgAts").textContent = avg + "%";
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="no-data">🔍 No applications match your filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="no-data">🔍 No applications match your filter.</td></tr>';
         return;
       }
 
@@ -1482,6 +1528,7 @@ app.get("/dashboard", async (c) => {
         row.innerHTML = \`
           <td><div class="role-title">\${app.jobTitle || "N/A"}</div></td>
           <td><div class="company-name-col">\${app.company || "N/A"}</div></td>
+          <td style="font-weight: 500; color: #58a6ff;">\${getPortalName(app.applyLink)}</td>
           <td>\${app.location || "N/A"}</td>
           <td>\${app.salary || "Not Disclosed"}</td>
           <td>\${app.email || "N/A"}</td>
@@ -1543,6 +1590,7 @@ app.get("/dashboard", async (c) => {
       document.getElementById("modalSal").textContent = app.salary || "Not Disclosed";
       document.getElementById("modalHrEmail").textContent = app.email || "N/A";
       document.getElementById("modalHrPhone").textContent = app.phone || "N/A";
+      document.getElementById("modalPortalName").textContent = getPortalName(app.applyLink);
       document.getElementById("modalJd").textContent = app.jdText || "No job description text logged.";
       
       const statusSelect = document.getElementById("modalStatusSelect");
