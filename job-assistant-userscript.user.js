@@ -2523,6 +2523,15 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             }),
             onload: function (r) {
                 console.log("[Job Assistant] Tracked in Cloudflare D1:", r.responseText);
+                const res = parseJsonSafe(r.responseText);
+                if (r.status !== 200 || (res && res.error)) {
+                    console.error("[Job Assistant] D1 tracking failed:", res);
+                    alert("⚠️ Cloudflare D1 Database Save Error:\n\n" + (res?.details || res?.error || r.responseText || "Status: " + r.status));
+                }
+            },
+            onerror: function (err) {
+                console.error("[Job Assistant] D1 Network Error:", err);
+                alert("❌ Cloudflare D1 Network Error:\nCould not reach the backend worker server at: " + getWorkerUrl());
             }
         });
 

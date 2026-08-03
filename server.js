@@ -244,7 +244,7 @@ app.post("/api/track", async (c) => {
 
   } catch (err) {
     console.error("Error saving application:", err);
-    return c.json({ error: "Failed to save application" }, 500);
+    return c.json({ error: "Failed to save application", details: err.message || String(err) }, 500);
   }
 });
 
