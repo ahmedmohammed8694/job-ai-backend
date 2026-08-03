@@ -582,8 +582,8 @@ app.get("/dashboard", async (c) => {
 
     main {
       flex: 1;
-      max-width: 1300px;
-      width: 90%;
+      max-width: 1500px;
+      width: 95%;
       margin: 32px auto;
       display: flex;
       flex-direction: column;
@@ -844,7 +844,7 @@ app.get("/dashboard", async (c) => {
       background: #0d1117;
       border: 1px solid var(--card-border);
       border-radius: 20px;
-      width: 750px;
+      width: 950px;
       max-width: 95%;
       max-height: 90vh;
       overflow-y: auto;
@@ -1102,6 +1102,8 @@ app.get("/dashboard", async (c) => {
             <th>Company</th>
             <th>Location</th>
             <th>Salary</th>
+            <th>Email ID</th>
+            <th>Phone Number</th>
             <th>ATS Score</th>
             <th>Apply Date</th>
             <th>Status</th>
@@ -1335,7 +1337,7 @@ app.get("/dashboard", async (c) => {
       document.getElementById("avgAts").textContent = avg + "%";
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="no-data">🔍 No applications match your filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="no-data">🔍 No applications match your filter.</td></tr>';
         return;
       }
 
@@ -1354,10 +1356,12 @@ app.get("/dashboard", async (c) => {
           <td><div class="company-name-col">\${app.company || "N/A"}</div></td>
           <td>\${app.location || "N/A"}</td>
           <td>\${app.salary || "Not Disclosed"}</td>
+          <td>\${app.email || "N/A"}</td>
+          <td>\${app.phone || "N/A"}</td>
           <td class="ats-score">\${app.atsScore || app.resumeScore || 0}%</td>
           <td style="color: var(--text-muted);">\${date}</td>
           <td>
-            <select class="status-select-inline \${statusClass}" onchange="event.stopPropagation(); updateAppStatusFromRow('\${app.id}', this.value)">
+            <select class="status-select-inline \${statusClass}" onclick="event.stopPropagation();" onchange="event.stopPropagation(); updateAppStatusFromRow('\${app.id}', this.value)">
               <option value="Applied" \${app.status === "Applied" ? "selected" : ""}>Applied</option>
               <option value="Interviewing" \${app.status === "Interviewing" ? "selected" : ""}>Interviewing</option>
               <option value="Offered" \${app.status === "Offered" ? "selected" : ""}>Offered</option>
@@ -1366,6 +1370,10 @@ app.get("/dashboard", async (c) => {
           </td>
           <td class="action-cell">
             <div class="action-buttons-group" onclick="event.stopPropagation();">
+              <button class="action-circle-btn" onclick="openDetailsModalDirect('\${app.id}')" title="View Job Details">
+                👁️
+              </button>
+
               \${app.applyLink ? \`<a href="\${app.applyLink}" target="_blank" class="action-circle-btn" title="Open Job Post">🔗</a>\` : ''}
               
               <button class="action-circle-btn \${app.whatsAppMessage && app.whatsAppMessage !== 'No generated' ? 'active' : 'disabled'}" 
@@ -1392,6 +1400,11 @@ app.get("/dashboard", async (c) => {
         row.onclick = () => openDetailsModal(app);
         tbody.appendChild(row);
       });
+    }
+
+    function openDetailsModalDirect(appId) {
+      const app = userApplications.find(a => a.id === appId);
+      if (app) openDetailsModal(app);
     }
 
     function openDetailsModal(app) {
