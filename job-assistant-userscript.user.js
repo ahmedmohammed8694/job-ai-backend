@@ -2479,7 +2479,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
 
         GM_xmlhttpRequest({
             method: "POST",
-            url: WORKER_URL + "/api/upload-resume",
+            url: getWorkerUrl() + "/api/upload-resume",
             data: formData,
             onload: function (r) {
                 const res = parseJsonSafe(r.responseText);
@@ -2499,7 +2499,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         // 1. Log to Cloudflare D1 Database
         GM_xmlhttpRequest({
             method: "POST",
-            url: WORKER_URL + "/api/track",
+            url: getWorkerUrl() + "/api/track",
             headers: { "Content-Type": "application/json" },
             anonymous: true,
             data: JSON.stringify({
@@ -2949,7 +2949,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = origText;
                 if (res && res.success) {
-                    const fullUrl = res.fileUrl.startsWith("http") ? res.fileUrl : WORKER_URL + res.fileUrl;
+                    const fullUrl = res.fileUrl.startsWith("http") ? res.fileUrl : getWorkerUrl() + res.fileUrl;
                     if (typeof GM_setValue === "function") {
                         GM_setValue("lastUploadedResumeUrl", fullUrl);
                     } else {
@@ -2986,7 +2986,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             });
         };
         shadow.getElementById("dashBtn").onclick = () => {
-            const url = WORKER_URL + "/dashboard?email=" + encodeURIComponent(getConnectedUserEmail());
+            const url = getWorkerUrl() + "/dashboard?email=" + encodeURIComponent(getConnectedUserEmail());
             if (typeof GM_openInTab === "function") {
                 GM_openInTab(url, { active: true });
             } else {
