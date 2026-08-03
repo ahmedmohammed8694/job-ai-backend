@@ -761,6 +761,62 @@ app.get("/dashboard", async (c) => {
     .status-badge.offered { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); border: 1px solid rgba(63, 185, 80, 0.3); }
     .status-badge.rejected { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 81, 73, 0.3); }
 
+    .company-name-col {
+      font-weight: 600;
+      color: var(--accent-color);
+    }
+
+    .status-select-inline {
+      border: 1px solid rgba(255,255,255,0.15) !important;
+      background-color: rgba(13, 17, 23, 0.9) !important;
+      border-radius: 99px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    .status-select-inline.applied { color: var(--accent-color) !important; border-color: rgba(88, 166, 255, 0.4) !important; background: rgba(56, 139, 253, 0.08) !important; }
+    .status-select-inline.interviewing { color: var(--accent-purple) !important; border-color: rgba(188, 140, 255, 0.4) !important; background: rgba(188, 140, 255, 0.08) !important; }
+    .status-select-inline.offered { color: var(--accent-green) !important; border-color: rgba(63, 185, 80, 0.4) !important; background: rgba(63, 185, 80, 0.08) !important; }
+    .status-select-inline.rejected { color: var(--accent-red) !important; border-color: rgba(248, 81, 73, 0.4) !important; background: rgba(248, 81, 73, 0.08) !important; }
+    .status-select-inline option { background: #161b22 !important; color: #fff !important; }
+
+    .action-buttons-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    
+    .action-circle-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+      font-size: 12px;
+    }
+
+    .action-circle-btn:hover {
+      background: rgba(88, 166, 255, 0.15);
+      border-color: var(--accent-color);
+      transform: scale(1.08);
+    }
+
+    .action-circle-btn.disabled {
+      opacity: 0.25;
+      cursor: not-allowed;
+      filter: grayscale(1);
+      pointer-events: none;
+    }
+
     .ats-score {
       font-weight: 700;
       color: var(--accent-purple);
@@ -998,10 +1054,23 @@ app.get("/dashboard", async (c) => {
 
     <!-- Filters -->
     <div class="filters-bar">
-      <div class="search-wrapper">
+      <div class="search-wrapper" style="flex: 2; min-width: 250px;">
         <span class="search-icon">🔍</span>
         <input type="text" id="searchInput" placeholder="Search by role, company, or location...">
       </div>
+      
+      <div class="select-wrapper">
+        <select id="roleFilter">
+          <option value="all">All Roles</option>
+        </select>
+      </div>
+
+      <div class="select-wrapper">
+        <select id="companyFilter">
+          <option value="all">All Companies</option>
+        </select>
+      </div>
+
       <div class="select-wrapper">
         <select id="statusFilter">
           <option value="all">All Statuses</option>
@@ -1011,6 +1080,17 @@ app.get("/dashboard", async (c) => {
           <option value="rejected">Rejected</option>
         </select>
       </div>
+
+      <div class="search-wrapper" style="flex: 1; min-width: 150px;">
+        <input type="text" id="salaryFilterInput" placeholder="Min Salary (e.g. 50k)..." style="padding-left: 14px;">
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center; background: #0d1117; border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 12px; flex-wrap: wrap;">
+        <span style="font-size: 12px; color: var(--text-muted);">From:</span>
+        <input type="date" id="startDateFilter" style="background:transparent; border:none; color:var(--text-main); font-size:12.5px; outline:none; cursor:pointer;">
+        <span style="font-size: 12px; color: var(--text-muted);">To:</span>
+        <input type="date" id="endDateFilter" style="background:transparent; border:none; color:var(--text-main); font-size:12.5px; outline:none; cursor:pointer;">
+      </div>
     </div>
 
     <!-- Table -->
@@ -1018,12 +1098,14 @@ app.get("/dashboard", async (c) => {
       <table id="appsTable">
         <thead>
           <tr>
-            <th>Role & Company</th>
+            <th>Role</th>
+            <th>Company</th>
             <th>Location</th>
             <th>Salary</th>
             <th>ATS Score</th>
+            <th>Apply Date</th>
             <th>Status</th>
-            <th>Date Tracked</th>
+            <th>Templates & Actions</th>
           </tr>
         </thead>
         <tbody id="tableBody">
@@ -1120,11 +1202,85 @@ app.get("/dashboard", async (c) => {
     const userApplications = ${JSON.stringify(apps)};
     let activeAppId = null;
 
+    // Populate filter dropdowns dynamically
+    let dropdownsPopulated = false;
+    function populateFilterDropdowns() {
+      if (dropdownsPopulated) return;
+      const roles = new Set();
+      const companies = new Set();
+      userApplications.forEach(app => {
+        if (app.jobTitle) roles.add(app.jobTitle.trim());
+        if (app.company) companies.add(app.company.trim());
+      });
+
+      const roleSelect = document.getElementById("roleFilter");
+      Array.from(roles).sort().forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.toLowerCase();
+        opt.textContent = r;
+        roleSelect.appendChild(opt);
+      });
+
+      const companySelect = document.getElementById("companyFilter");
+      Array.from(companies).sort().forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.toLowerCase();
+        opt.textContent = c;
+        companySelect.appendChild(opt);
+      });
+      dropdownsPopulated = true;
+    }
+
+    function copyDirect(appId, field) {
+      const app = userApplications.find(a => a.id === appId);
+      if (!app) return;
+      const text = app[field];
+      if (!text || text === "No generated") {
+        alert("⚠️ No template generated for this option yet.");
+        return;
+      }
+      
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      alert("📋 Copied to clipboard!");
+    }
+
+    async function updateAppStatusFromRow(appId, newStatus) {
+      try {
+        const res = await fetch(\`/api/update-status/\${appId}\`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus, userEmail: "${email}" })
+        });
+        if (res.ok) {
+          // Update local state
+          const app = userApplications.find(a => a.id === appId);
+          if (app) {
+            app.status = newStatus;
+            renderDashboard();
+          }
+        }
+      } catch (err) {
+        console.error("Failed to update status from row:", err);
+      }
+    }
+
     // Load Stats and Table
     function renderDashboard() {
+      populateFilterDropdowns();
+
       const tbody = document.getElementById("tableBody");
       const search = document.getElementById("searchInput").value.toLowerCase();
+      const roleFilter = document.getElementById("roleFilter").value;
+      const companyFilter = document.getElementById("companyFilter").value;
       const statusFilter = document.getElementById("statusFilter").value;
+      const salaryFilter = document.getElementById("salaryFilterInput").value.toLowerCase();
+      const startDateVal = document.getElementById("startDateFilter").value;
+      const endDateVal = document.getElementById("endDateFilter").value;
 
       tbody.innerHTML = "";
 
@@ -1132,10 +1288,42 @@ app.get("/dashboard", async (c) => {
         const title = (app.jobTitle || "").toLowerCase();
         const company = (app.company || "").toLowerCase();
         const loc = (app.location || "").toLowerCase();
-        const matchesSearch = title.includes(search) || company.includes(search) || loc.includes(search);
         
-        if (statusFilter === "all") return matchesSearch;
-        return matchesSearch && (app.status || "").toLowerCase() === statusFilter;
+        // 1. General Search
+        const matchesSearch = title.includes(search) || company.includes(search) || loc.includes(search);
+        if (!matchesSearch) return false;
+
+        // 2. Role Filter
+        if (roleFilter !== "all" && title !== roleFilter) return false;
+
+        // 3. Company Filter
+        if (companyFilter !== "all" && company !== companyFilter) return false;
+
+        // 4. Status Filter
+        if (statusFilter !== "all" && (app.status || "").toLowerCase() !== statusFilter) return false;
+
+        // 5. Salary Filter
+        if (salaryFilter) {
+          const salText = (app.salary || "").toLowerCase();
+          if (!salText.includes(salaryFilter)) return false;
+        }
+
+        // 6. Date Range Filter
+        if (app.createdAt) {
+          const appDate = new Date(app.createdAt);
+          if (startDateVal) {
+            const start = new Date(startDateVal);
+            start.setHours(0,0,0,0);
+            if (appDate < start) return false;
+          }
+          if (endDateVal) {
+            const end = new Date(endDateVal);
+            end.setHours(23,59,59,999);
+            if (appDate > end) return false;
+          }
+        }
+
+        return true;
       });
 
       // Update counters
@@ -1147,7 +1335,7 @@ app.get("/dashboard", async (c) => {
       document.getElementById("avgAts").textContent = avg + "%";
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="no-data">🔍 No applications match your filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">🔍 No applications match your filter.</td></tr>';
         return;
       }
 
@@ -1162,17 +1350,43 @@ app.get("/dashboard", async (c) => {
         const statusClass = (app.status || "Applied").toLowerCase();
 
         row.innerHTML = \`
-          <td>
-            <div class="role-title">\${app.jobTitle || "N/A"}</div>
-            <div class="company-name">\${app.company || "N/A"}</div>
-          </td>
+          <td><div class="role-title">\${app.jobTitle || "N/A"}</div></td>
+          <td><div class="company-name-col">\${app.company || "N/A"}</div></td>
           <td>\${app.location || "N/A"}</td>
           <td>\${app.salary || "Not Disclosed"}</td>
           <td class="ats-score">\${app.atsScore || app.resumeScore || 0}%</td>
-          <td>
-            <span class="status-badge \${statusClass}">\${app.status || "Applied"}</span>
-          </td>
           <td style="color: var(--text-muted);">\${date}</td>
+          <td>
+            <select class="status-select-inline \${statusClass}" onchange="event.stopPropagation(); updateAppStatusFromRow('\${app.id}', this.value)">
+              <option value="Applied" \${app.status === "Applied" ? "selected" : ""}>Applied</option>
+              <option value="Interviewing" \${app.status === "Interviewing" ? "selected" : ""}>Interviewing</option>
+              <option value="Offered" \${app.status === "Offered" ? "selected" : ""}>Offered</option>
+              <option value="Rejected" \${app.status === "Rejected" ? "selected" : ""}>Rejected</option>
+            </select>
+          </td>
+          <td class="action-cell">
+            <div class="action-buttons-group" onclick="event.stopPropagation();">
+              \${app.applyLink ? \`<a href="\${app.applyLink}" target="_blank" class="action-circle-btn" title="Open Job Post">🔗</a>\` : ''}
+              
+              <button class="action-circle-btn \${app.whatsAppMessage && app.whatsAppMessage !== 'No generated' ? 'active' : 'disabled'}" 
+                      onclick="copyDirect('\${app.id}', 'whatsAppMessage')" 
+                      title="\${app.whatsAppMessage && app.whatsAppMessage !== 'No generated' ? 'Copy WhatsApp Message' : 'No WhatsApp message generated'}">
+                💬
+              </button>
+
+              <button class="action-circle-btn \${app.emailMessage && app.emailMessage !== 'No generated' ? 'active' : 'disabled'}" 
+                      onclick="copyDirect('\${app.id}', 'emailMessage')" 
+                      title="\${app.emailMessage && app.emailMessage !== 'No generated' ? 'Copy Email Message' : 'No Email generated'}">
+                ✉️
+              </button>
+
+              <button class="action-circle-btn \${app.coverLetter && app.coverLetter !== 'No generated' ? 'active' : 'disabled'}" 
+                      onclick="copyDirect('\${app.id}', 'coverLetter')" 
+                      title="\${app.coverLetter && app.coverLetter !== 'No generated' ? 'Copy Cover Letter' : 'No Cover Letter generated'}">
+                📄
+              </button>
+            </div>
+          </td>
         \`;
 
         row.onclick = () => openDetailsModal(app);
@@ -1251,7 +1465,12 @@ app.get("/dashboard", async (c) => {
 
     // Bind Listeners
     document.getElementById("searchInput").oninput = renderDashboard;
+    document.getElementById("roleFilter").onchange = renderDashboard;
+    document.getElementById("companyFilter").onchange = renderDashboard;
     document.getElementById("statusFilter").onchange = renderDashboard;
+    document.getElementById("salaryFilterInput").oninput = renderDashboard;
+    document.getElementById("startDateFilter").onchange = renderDashboard;
+    document.getElementById("endDateFilter").onchange = renderDashboard;
     document.getElementById("closeModal").onclick = closeDetailsModal;
     
     document.getElementById("modalStatusSelect").onchange = function() {
