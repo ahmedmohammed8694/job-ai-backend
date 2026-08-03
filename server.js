@@ -1030,8 +1030,13 @@ app.get("/dashboard", async (c) => {
 
   <header>
     <div class="logo">📋 Job Applications Dashboard</div>
-    <div class="user-info">
-      👤 User: <strong id="userEmailHeader">${email}</strong>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <div class="user-info">
+        👤 User: <strong id="userEmailHeader">${email}</strong>
+      </div>
+      <button id="exportCsvBtn" style="display:flex; align-items:center; gap:8px; padding:8px 16px; background:linear-gradient(135deg, #238636, #2ea043); color:#fff; border:none; border-radius:99px; font-weight:600; cursor:pointer; font-size:13.5px; transition:transform 0.1s, opacity 0.2s; box-shadow: 0 4px 12px rgba(46,160,67,0.25);" onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.02)';" onmouseout="this.style.opacity='1'; this.style.transform='scale(1)';" onclick="downloadCSV()">
+        📥 Export CSV
+      </button>
     </div>
   </header>
 
@@ -1231,6 +1236,114 @@ app.get("/dashboard", async (c) => {
         companySelect.appendChild(opt);
       });
       dropdownsPopulated = true;
+    }
+
+    function downloadCSV() {
+      const search = document.getElementById("searchInput").value.toLowerCase();
+      const roleFilter = document.getElementById("roleFilter").value;
+      const companyFilter = document.getElementById("companyFilter").value;
+      const statusFilter = document.getElementById("statusFilter").value;
+      const salaryFilter = document.getElementById("salaryFilterInput").value.toLowerCase();
+      const startDateVal = document.getElementById("startDateFilter").value;
+      const endDateVal = document.getElementById("endDateFilter").value;
+
+      const filtered = userApplications.filter(app => {
+        const title = (app.jobTitle || "").toLowerCase();
+        const company = (app.company || "").toLowerCase();
+        const loc = (app.location || "").toLowerCase();
+        
+        const matchesSearch = title.includes(search) || company.includes(search) || loc.includes(search);
+        if (!matchesSearch) return false;
+
+        if (roleFilter !== "all" && title !== roleFilter) return false;
+        if (companyFilter !== "all" && company !== companyFilter) return false;
+        if (statusFilter !== "all" && (app.status || "").toLowerCase() !== statusFilter) return false;
+        if (salaryFilter) {
+          const salText = (app.salary || "").toLowerCase();
+          if (!salText.includes(salaryFilter)) return false;
+        }
+
+        if (app.createdAt) {
+          const appDate = new Date(app.createdAt);
+          if (startDateVal) {
+            const start = new Date(startDateVal);
+            start.setHours(0,0,0,0);
+            if (appDate < start) return false;
+          }
+          if (endDateVal) {
+            const end = new Date(endDateVal);
+            end.setHours(23,59,59,999);
+            if (appDate > end) return false;
+          }
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        alert("⚠️ No job applications found to export matching the current filters!");
+        return;
+      }
+
+      const headers = [
+        "Job ID",
+        "Role",
+        "Company",
+        "Location",
+        "Salary",
+        "HR Email",
+        "HR Phone",
+        "ATS Score %",
+        "Apply Date",
+        "Status",
+        "Apply Link",
+        "Resume URL",
+        "WhatsApp Template",
+        "Email Template",
+        "Cover Letter Template",
+        "Job Description"
+      ];
+
+      const csvRows = [headers.map(h => `"${h.replace(/"/g, '""')}"`).join(",")];
+
+      filtered.forEach(app => {
+        const dateStr = app.createdAt ? new Date(app.createdAt).toLocaleDateString("en-IN", {
+          day: "numeric", month: "short", year: "numeric"
+        }) : "N/A";
+        
+        const row = [
+          app.id || "",
+          app.jobTitle || "",
+          app.company || "",
+          app.location || "",
+          app.salary || "",
+          app.email || "",
+          app.phone || "",
+          (app.atsScore || app.resumeScore || 0) + "%",
+          dateStr,
+          app.status || "Applied",
+          app.applyLink || "",
+          app.resumeUrl || "",
+          app.whatsAppMessage || "",
+          app.emailMessage || "",
+          app.coverLetter || "",
+          app.jdText || ""
+        ];
+        
+        csvRows.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","));
+      });
+
+      const csvContent = "\uFEFF" + csvRows.join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      const sanitizedEmail = "${email}".replace(/[^a-zA-Z0-9]/g, "_");
+      link.href = url;
+      link.download = `job_applications_${sanitizedEmail}_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     function copyDirect(appId, field) {
