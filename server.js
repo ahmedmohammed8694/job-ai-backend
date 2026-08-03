@@ -1782,7 +1782,7 @@ app.get("/dashboard", async (c) => {
           const pct = Math.round((count / maxPortalCount) * 100);
           const sharePct = Math.round((count / filtered.length) * 100);
           const tr = document.createElement("tr");
-          tr.innerHTML = `
+          tr.innerHTML = \`
             <td style="font-weight:600; color:#58a6ff;">\${portal}</td>
             <td style="font-weight:700; color:#fff;">\${count}</td>
             <td style="width: 50%;">
@@ -1793,7 +1793,7 @@ app.get("/dashboard", async (c) => {
                 <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
               </div>
             </td>
-          `;
+          \`;
           portalBody.appendChild(tr);
         });
       }
@@ -1815,7 +1815,7 @@ app.get("/dashboard", async (c) => {
         const statusClass = status.toLowerCase();
         const sharePct = filtered.length ? Math.round((count / filtered.length) * 100) : 0;
         const tr = document.createElement("tr");
-        tr.innerHTML = `
+        tr.innerHTML = \`
           <td><span class="status-badge \${statusClass}">\${status}</span></td>
           <td style="font-weight:700; color:#fff;">\${count}</td>
           <td style="width: 50%;">
@@ -1826,7 +1826,7 @@ app.get("/dashboard", async (c) => {
               <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
             </div>
           </td>
-        `;
+        \`;
         statusBody.appendChild(tr);
       });
 
@@ -1849,7 +1849,7 @@ app.get("/dashboard", async (c) => {
           const pct = Math.round((count / maxRoleCount) * 100);
           const sharePct = Math.round((count / filtered.length) * 100);
           const tr = document.createElement("tr");
-          tr.innerHTML = `
+          tr.innerHTML = \`
             <td style="font-weight:600; color:#c9d1d9;">\${role}</td>
             <td style="font-weight:700; color:#fff;">\${count}</td>
             <td style="width: 50%;">
@@ -1860,7 +1860,7 @@ app.get("/dashboard", async (c) => {
                 <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
               </div>
             </td>
-          `;
+          \`;
           roleBody.appendChild(tr);
         });
       }
