@@ -1300,7 +1300,7 @@ app.get("/dashboard", async (c) => {
   <div class="card">
     <h2>⚠️ Database Query Error</h2>
     <p>We encountered an error querying the database:</p>
-    <p><code>\${err.message || err}</code></p>
+    <p><code>${err.message || err}</code></p>
     <p style="margin-top: 20px;">Please ensure you have initialized your database schema and migrated any updates by running the migration commands in your terminal:</p>
     <div style="background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; color: #79c0ff; text-align: left; overflow-x: auto;">
       npx wrangler d1 execute job-ai-db --file=./update_schema.sql --remote
