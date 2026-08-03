@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.32
+// @name         Job Assistant Premium Naukri & LinkedIn V01.33
 // @namespace    http://tampermonkey.net/
-// @version      01.32
-// @description  Google Cloud OAuth 2.0 Client ID setup support & direct account chooser sign-in.
+// @version      01.33
+// @description  Official Google Cloud OAuth 2.0 Client ID integration for automated Gmail ID & User Name profile sync.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -36,7 +36,8 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = "V01.32";
+    const SCRIPT_VERSION = "V01.33";
+    const DEFAULT_GOOGLE_CLIENT_ID = "518197699646-m1p26gl8nf26bisdufjv4m5d1ltr7o9e.apps.googleusercontent.com";
     const WORKER_URL = "https://job-ai-backend.ahmed-mohammed8694.workers.dev";
     const SHEET_URL = "https://script.google.com/macros/s/AKfycbzXY-3b4OrJnYzfq3W9AVnBP9oc9pzQaaCZdI1ysTUk-635jQrrXpnQPXjRq53eKitO/exec";
     const DASHBOARD_URL = SHEET_URL + "?view=dashboard";
@@ -347,8 +348,8 @@ Product Adoption & Engagement, Windows Troubleshooting
         try {
             const gm = typeof GM_getValue === "function" ? GM_getValue("customGoogleClientId", "") : "";
             const ls = typeof localStorage !== "undefined" ? localStorage.getItem("customGoogleClientId") : "";
-            return (gm || ls || "").trim();
-        } catch(e) { return ""; }
+            return (gm || ls || "").trim() || DEFAULT_GOOGLE_CLIENT_ID;
+        } catch(e) { return DEFAULT_GOOGLE_CLIENT_ID; }
     }
 
     // Custom Google OAuth2 Token Client Trigger (User's own Console Client ID)
@@ -422,22 +423,9 @@ Product Adoption & Engagement, Windows Troubleshooting
         client.requestAccessToken();
     }
 
-    // Direct Google Account Chooser Sign-In Handler (Zero 401 Client Errors)
+    // Direct Google Account Chooser Sign-In Handler using Official OAuth Client ID
     function connectGoogleAccountDirect() {
-        if (typeof GM_setValue === "function") {
-            GM_setValue("googleAccountDisconnected", false);
-        }
-        try { localStorage.setItem("googleAccountDisconnected", "false"); } catch(e) {}
-
-        const badge = document.getElementById("googleAccountStatusBadge");
-        if (badge) {
-            badge.style.background = "rgba(46,160,67,0.2)";
-            badge.style.color = "#3fb950";
-            badge.style.border = "1px solid rgba(46,160,67,0.4)";
-            badge.innerHTML = "🟢 Gemini AI Connected";
-        }
-
-        window.open("https://accounts.google.com/AccountChooser?continue=https://gemini.google.com/", "_blank");
+        triggerCustomGoogleOAuth(getCustomGoogleClientId());
     }
 
     function isGoogleAccountDisconnected() {
