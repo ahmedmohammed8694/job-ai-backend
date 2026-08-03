@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.21
+// @name         Job Assistant Premium Naukri & LinkedIn V01.32
 // @namespace    http://tampermonkey.net/
-// @version      01.21
-// @description  Added Gemini Model Dropdown Selector (2.0-flash, 1.5-flash, 1.5-pro) + Google Login & Logout account management.
+// @version      01.32
+// @description  Google Cloud OAuth 2.0 Client ID setup support & direct account chooser sign-in.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -36,6 +36,7 @@
 (function () {
     'use strict';
 
+    const SCRIPT_VERSION = "V01.32";
     const WORKER_URL = "https://job-ai-backend.ahmed-mohammed8694.workers.dev";
     const SHEET_URL = "https://script.google.com/macros/s/AKfycbzXY-3b4OrJnYzfq3W9AVnBP9oc9pzQaaCZdI1ysTUk-635jQrrXpnQPXjRq53eKitO/exec";
     const DASHBOARD_URL = SHEET_URL + "?view=dashboard";
@@ -332,39 +333,208 @@ Product Adoption & Engagement, Windows Troubleshooting
         } catch (e) { return ""; }
     }
 
+    // Inject Google Identity Services (GIS) Library
+    if (!document.getElementById("google-gsi-client-script")) {
+        const script = document.createElement("script");
+        script.id = "google-gsi-client-script";
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+    }
+
+    function getCustomGoogleClientId() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("customGoogleClientId", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("customGoogleClientId") : "";
+            return (gm || ls || "").trim();
+        } catch(e) { return ""; }
+    }
+
+    // Custom Google OAuth2 Token Client Trigger (User's own Console Client ID)
+    function triggerCustomGoogleOAuth(customClientId) {
+        const clientId = customClientId || getCustomGoogleClientId();
+        if (!clientId) {
+            alert("Please paste your Google Cloud Console OAuth Client ID first.");
+            return;
+        }
+
+        if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
+            alert("Google Identity SDK is loading. Please click again in 2 seconds.");
+            return;
+        }
+
+        const client = google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
+            callback: (tokenResponse) => {
+                if (tokenResponse && tokenResponse.access_token) {
+                    fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                    })
+                    .then(res => res.json())
+                    .then(user => {
+                        console.log("[Job Assistant] Custom OAuth UserInfo:", user);
+                        const name = user.name || user.given_name || "";
+                        const email = user.email || "";
+
+                        if (email) {
+                            if (typeof GM_setValue === "function") {
+                                GM_setValue("googleAccountDisconnected", false);
+                                GM_setValue("connectedUserName", name);
+                                GM_setValue("connectedUserEmail", email);
+                                GM_setValue("customGoogleClientId", clientId);
+                            }
+                            try {
+                                localStorage.setItem("googleAccountDisconnected", "false");
+                                localStorage.setItem("connectedUserName", name);
+                                localStorage.setItem("connectedUserEmail", email);
+                                localStorage.setItem("customGoogleClientId", clientId);
+                            } catch(e) {}
+
+                            PROFILE.name = name || PROFILE.name;
+                            PROFILE.email = email || PROFILE.email;
+
+                            const nameInput = document.getElementById("userNameInput");
+                            const emailInput = document.getElementById("userEmailInput");
+                            const badge = document.getElementById("googleAccountStatusBadge");
+
+                            if (nameInput) nameInput.value = name;
+                            if (emailInput) emailInput.value = email;
+                            if (badge) {
+                                badge.style.background = "rgba(46,160,67,0.2)";
+                                badge.style.color = "#3fb950";
+                                badge.style.border = "1px solid rgba(46,160,67,0.4)";
+                                badge.innerHTML = "🟢 Gemini AI Connected";
+                            }
+
+                            alert(`🎉 Connected Google Account via Client ID!\n\nUser Name: ${name}\nGmail ID: ${email}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("[Job Assistant] Error fetching UserInfo:", err);
+                        alert("Error fetching Google Account details with Client ID. Please verify authorized origins.");
+                    });
+                }
+            }
+        });
+
+        client.requestAccessToken();
+    }
+
+    // Direct Google Account Chooser Sign-In Handler (Zero 401 Client Errors)
+    function connectGoogleAccountDirect() {
+        if (typeof GM_setValue === "function") {
+            GM_setValue("googleAccountDisconnected", false);
+        }
+        try { localStorage.setItem("googleAccountDisconnected", "false"); } catch(e) {}
+
+        const badge = document.getElementById("googleAccountStatusBadge");
+        if (badge) {
+            badge.style.background = "rgba(46,160,67,0.2)";
+            badge.style.color = "#3fb950";
+            badge.style.border = "1px solid rgba(46,160,67,0.4)";
+            badge.innerHTML = "🟢 Gemini AI Connected";
+        }
+
+        window.open("https://accounts.google.com/AccountChooser?continue=https://gemini.google.com/", "_blank");
+    }
+
+    function isGoogleAccountDisconnected() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("googleAccountDisconnected", false) : false;
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("googleAccountDisconnected") === "true" : false;
+            return Boolean(gm || ls);
+        } catch(e) { return false; }
+    }
+
+    function getConnectedUserName() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("connectedUserName", null) : null;
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("connectedUserName") : null;
+            if (gm !== null && gm !== undefined) return gm;
+            if (ls !== null && ls !== undefined) return ls;
+            if (isGoogleAccountDisconnected()) return "";
+            return PROFILE.name;
+        } catch(e) { return PROFILE.name; }
+    }
+
+    function getConnectedUserEmail() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("connectedUserEmail", null) : null;
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("connectedUserEmail") : null;
+            if (gm !== null && gm !== undefined) return gm;
+            if (ls !== null && ls !== undefined) return ls;
+            if (isGoogleAccountDisconnected()) return "";
+            return PROFILE.email;
+        } catch(e) { return PROFILE.email; }
+    }
+
     function showGeminiKeyModal() {
         const old = document.getElementById("gemini-key-modal");
         if (old) old.remove();
 
-        const currentKey = getGeminiApiKey();
         const currentModel = getSelectedGeminiModel();
+        const disconnected = isGoogleAccountDisconnected();
+        const isConnected = !disconnected;
+        const currentName = getConnectedUserName();
+        const currentEmail = getConnectedUserEmail();
 
         const modal = document.createElement("div");
         modal.id = "gemini-key-modal";
-        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-height:90vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:440px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
 
         modal.innerHTML = `
             <div style="padding:18px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #21262d;padding-bottom:10px;">
-                    <strong style="color:#58a6ff;font-size:14px;">🤖 Gemini AI Account & Model Setup</strong>
+                    <strong style="color:#58a6ff;font-size:14px;">🤖 Google Account & Gemini AI Setup</strong>
                     <span id="closeGeminiModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
                 </div>
 
-                <!-- LOGIN WITH GOOGLE CARD -->
-                <div style="background:rgba(56,139,253,0.1);border:1px solid rgba(56,139,253,0.3);border-radius:10px;padding:12px;margin-bottom:14px;">
-                    <strong style="color:#79c0ff;font-size:11.5px;display:block;margin-bottom:4px;">🔑 Google Sign-In & API Key Setup:</strong>
-                    <p style="margin:0 0 8px 0;color:#8b949e;font-size:11px;line-height:1.45;">
-                        Click below to sign in with your Google account on Google AI Studio to retrieve or generate your free Gemini API Key:
-                    </p>
+                <!-- GOOGLE ACCOUNT STATUS CARD -->
+                <div style="background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,0.25);border-radius:12px;padding:14px;margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <strong style="color:#79c0ff;font-size:12px;">👤 Google Account Profile:</strong>
+                        <span id="googleAccountStatusBadge" style="background:${isConnected ? "rgba(46,160,67,0.2)" : "rgba(248,81,73,0.2)"};color:${isConnected ? "#3fb950" : "#f85149"};border:1px solid ${isConnected ? "rgba(46,160,67,0.4)" : "rgba(248,81,73,0.4)"};border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;">
+                            ${isConnected ? "🟢 Gemini AI Connected" : "🔴 Disconnected"}
+                        </span>
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                            User Name:
+                        </label>
+                        <input type="text" id="userNameInput" value="${currentName}" placeholder="Enter User Name (e.g. Mohammed Ahmed)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:11.5px;outline:none;" />
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                            Gmail Address:
+                        </label>
+                        <input type="text" id="userEmailInput" value="${currentEmail}" placeholder="Enter Gmail Address (e.g. user@gmail.com)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-size:11.5px;outline:none;" />
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
+                            🔑 Custom Google OAuth Client ID (Optional):
+                        </label>
+                        <div style="display:flex;gap:6px;">
+                            <input type="text" id="googleClientIdInput" value="${getCustomGoogleClientId()}" placeholder="Paste Client ID (e.g. 12345...apps.googleusercontent.com)" style="flex:1;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-family:monospace;font-size:11px;outline:none;" />
+                            <button id="runCustomOAuthBtn" style="background:#238636;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:11px;">
+                                🔐 Connect
+                            </button>
+                        </div>
+                    </div>
+
                     <div style="text-align:center;">
-                        <a href="https://aistudio.google.com/apikey" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;text-decoration:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:11.5px;box-shadow:0 4px 12px rgba(66,133,244,0.3);">
-                            🔑 Login with Google to Get Key (aistudio.google.com) →
-                        </a>
+                        <button id="connectGoogleBtn" style="width:100%;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;border:none;padding:11px 14px;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer;box-shadow:0 4px 12px rgba(66,133,244,0.35);">
+                            🌐 1-Click Select & Sign in with Google Account (gemini.google.com) →
+                        </button>
                     </div>
                 </div>
 
                 <!-- MODEL DROPDOWN SELECTOR -->
-                <div style="margin-bottom:12px;">
+                <div style="margin-bottom:14px;">
                     <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
                         🎯 Select Gemini AI Model:
                     </label>
@@ -376,21 +546,13 @@ Product Adoption & Engagement, Windows Troubleshooting
                     </select>
                 </div>
 
-                <!-- API KEY INPUT FIELD -->
-                <div style="margin-bottom:14px;">
-                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
-                        🔑 Saved Gemini API Key:
-                    </label>
-                    <input type="text" id="geminiApiKeyInput" value="${currentKey}" placeholder="Paste your API key here (e.g. AIzaSy...)" style="width:100%;padding:9px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-family:monospace;font-size:12px;outline:none;" />
-                </div>
-
                 <!-- BUTTON ACTIONS -->
                 <div style="display:flex;gap:8px;">
                     <button id="saveGeminiKeyBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        💾 Save Settings
+                        💾 Save Account Settings
                     </button>
                     <button id="clearGeminiKeyBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
-                        🚪 Logout / Disconnect
+                        🚪 Logout / Disconnect Gmail Account
                     </button>
                 </div>
             </div>
@@ -400,38 +562,66 @@ Product Adoption & Engagement, Windows Troubleshooting
 
         modal.querySelector("#closeGeminiModal").onclick = () => modal.remove();
 
+        const connBtn = modal.querySelector("#connectGoogleBtn");
+        if (connBtn) connBtn.onclick = () => connectGoogleAccountDirect();
+
+        const customOAuthBtn = modal.querySelector("#runCustomOAuthBtn");
+        if (customOAuthBtn) {
+            customOAuthBtn.onclick = () => {
+                const cId = modal.querySelector("#googleClientIdInput").value.trim();
+                triggerCustomGoogleOAuth(cId);
+            };
+        }
+
         modal.querySelector("#saveGeminiKeyBtn").onclick = () => {
-            const inputVal = modal.querySelector("#geminiApiKeyInput").value.trim();
+            const newName = modal.querySelector("#userNameInput").value.trim();
+            const newEmail = modal.querySelector("#userEmailInput").value.trim();
             const selectedModelVal = modal.querySelector("#geminiModelSelect").value;
 
             if (typeof GM_setValue === "function") {
-                GM_setValue("geminiApiKey", inputVal);
+                GM_setValue("googleAccountDisconnected", false);
+                GM_setValue("connectedUserName", newName);
+                GM_setValue("connectedUserEmail", newEmail);
                 GM_setValue("selectedGeminiModel", selectedModelVal);
             }
             try {
-                localStorage.setItem("geminiApiKey", inputVal);
+                localStorage.setItem("googleAccountDisconnected", "false");
+                localStorage.setItem("connectedUserName", newName);
+                localStorage.setItem("connectedUserEmail", newEmail);
                 localStorage.setItem("selectedGeminiModel", selectedModelVal);
             } catch (e) { }
 
-            if (inputVal) {
-                alert(`✅ Gemini AI Settings Saved!\n\nModel: ${selectedModelVal}\nAPI Key: Saved`);
-            } else {
-                alert("ℹ️ Gemini API Key cleared.");
-            }
+            if (newName) PROFILE.name = newName;
+            if (newEmail) PROFILE.email = newEmail;
+
+            alert(`✅ Google Account Details Saved!\n\nConnected User: ${newName || "N/A"}\nConnected Gmail: ${newEmail || "N/A"}\nSelected Model: ${selectedModelVal}`);
             modal.remove();
         };
 
         modal.querySelector("#clearGeminiKeyBtn").onclick = () => {
-            modal.querySelector("#geminiApiKeyInput").value = "";
+            modal.querySelector("#userNameInput").value = "";
+            modal.querySelector("#userEmailInput").value = "";
+
             if (typeof GM_setValue === "function") {
+                GM_setValue("googleAccountDisconnected", true);
+                GM_setValue("connectedUserName", "");
+                GM_setValue("connectedUserEmail", "");
                 GM_setValue("geminiApiKey", "");
                 GM_setValue("selectedGeminiModel", "");
             }
             try {
+                localStorage.setItem("googleAccountDisconnected", "true");
+                localStorage.setItem("connectedUserName", "");
+                localStorage.setItem("connectedUserEmail", "");
                 localStorage.setItem("geminiApiKey", "");
                 localStorage.setItem("selectedGeminiModel", "");
             } catch (e) { }
-            alert("🚪 Logged out from Gemini API account. Stored API Key cleared.");
+
+            // Open Google logout endpoint to sign out session
+            window.open("https://accounts.google.com/Logout", "_blank");
+
+            alert("🚪 Disconnected Google Account!\n\nOld user profile cleared & Google session logged out.");
+            modal.remove();
         };
     }
 
@@ -1146,11 +1336,6 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         let apiKey = getGeminiApiKey();
         const infoForFallback = Object.assign({}, info, { title: freshTitle, company: freshCompany, jdText: freshJd, jobDescription: freshJd });
         const staticFallback = type === "email" ? emailBody(infoForFallback) : (type === "cover" ? coverLetter(infoForFallback) : waBody(infoForFallback));
-
-        if (!apiKey) {
-            showGeminiKeyModal();
-            apiKey = getGeminiApiKey();
-        }
 
         if (!apiKey) {
             console.warn("[Job Assistant] No Gemini API key set — using static template fallback.");
@@ -2004,7 +2189,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
 
         // Header
         const hdr = document.createElement("div"); hdr.id = "hdr";
-        hdr.innerHTML = `<strong>📋 Job Assistant Premium V1.1</strong><div class="hdr-btns"><span id="minBtn">➖</span><span id="clsBtn">✖</span></div>`;
+        hdr.innerHTML = `<strong>📋 Job Assistant Premium ${SCRIPT_VERSION}</strong><div class="hdr-btns"><span id="minBtn">➖</span><span id="clsBtn">✖</span></div>`;
         panel.appendChild(hdr);
 
         // Body
