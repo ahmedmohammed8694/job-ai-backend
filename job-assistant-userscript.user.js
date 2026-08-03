@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Job Assistant Premium Naukri & LinkedIn V01.33
+// @name         Job Assistant Premium Naukri & LinkedIn V01.38
 // @namespace    http://tampermonkey.net/
-// @version      01.33
-// @description  Official Google Cloud OAuth 2.0 Client ID integration for automated Gmail ID & User Name profile sync.
+// @version      01.38
+// @description  Multi-AI Provider vault (Gemini, ChatGPT, Grok, OpenRouter, OmniRoute, Claude) with multi-key auto-rotation & Cloudflare D1 storage.
 // @author       Mohammed Ahmed
 // @match        *://*.naukri.com/*
 // @match        *://*.linkedin.com/*
@@ -25,6 +25,10 @@
 // @connect      linkedin.com
 // @connect      www.linkedin.com
 // @connect      generativelanguage.googleapis.com
+// @connect      api.openai.com
+// @connect      api.x.ai
+// @connect      openrouter.ai
+// @connect      api.anthropic.com
 // @grant        GM_setClipboard
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
@@ -36,8 +40,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = "V01.33";
-    const DEFAULT_GOOGLE_CLIENT_ID = "518197699646-m1p26gl8nf26bisdufjv4m5d1ltr7o9e.apps.googleusercontent.com";
+    const SCRIPT_VERSION = "V01.38";
     const WORKER_URL = "https://job-ai-backend.ahmed-mohammed8694.workers.dev";
     const SHEET_URL = "https://script.google.com/macros/s/AKfycbzXY-3b4OrJnYzfq3W9AVnBP9oc9pzQaaCZdI1ysTUk-635jQrrXpnQPXjRq53eKitO/exec";
     const DASHBOARD_URL = SHEET_URL + "?view=dashboard";
@@ -277,6 +280,14 @@ Product Adoption & Engagement, Windows Troubleshooting
         } catch(e) { return "gemini-2.0-flash"; }
     }
 
+    function getGoogleAccessToken() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("googleAccessToken", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("googleAccessToken") : "";
+            return (gm || ls || "").trim();
+        } catch(e) { return ""; }
+    }
+
     function callGeminiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelIndex = 0) {
         let modelsToTry = GEMINI_MODELS.slice();
         const preferred = getSelectedGeminiModel();
@@ -290,13 +301,26 @@ Product Adoption & Engagement, Windows Troubleshooting
         }
 
         const modelName = modelsToTry[modelIndex];
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const accessToken = getGoogleAccessToken();
+        const effectiveKey = apiKey || getGeminiApiKey();
+
+        let apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+        const headers = { "Content-Type": "application/json" };
+
+        if (accessToken) {
+            headers["Authorization"] = `Bearer ${accessToken}`;
+        } else if (effectiveKey) {
+            apiUrl += `?key=${encodeURIComponent(effectiveKey)}`;
+            headers["X-goog-api-key"] = effectiveKey;
+        } else {
+            apiUrl += `?key=${encodeURIComponent("AIzaSyDummyKey")}`;
+        }
 
         GM_xmlhttpRequest({
             method: "POST",
             url: apiUrl,
-            headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-            anonymous: true,
+            headers: headers,
+            anonymous: false,
             data: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens || 8192 }
@@ -323,6 +347,247 @@ Product Adoption & Engagement, Windows Troubleshooting
                     onError("Network error calling Gemini API.");
                 }
             }
+    // ── MULTI-AI PROVIDERS (GEMINI, OPENAI CHATGPT, XAI GROK) ──
+    function getOpenAiApiKey() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("openAiApiKey", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("openAiApiKey") : "";
+            return (gm || ls || "").trim();
+        } catch(e) { return ""; }
+    }
+
+    function getGrokApiKey() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("grokApiKey", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("grokApiKey") : "";
+            return (gm || ls || "").trim();
+        } catch(e) { return ""; }
+    }
+
+    function getSelectedAiProvider() {
+        try {
+            const gm = typeof GM_getValue === "function" ? GM_getValue("selectedAiProvider", "") : "";
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("selectedAiProvider") : "";
+            return (gm || ls || "").trim() || "auto";
+        } catch(e) { return "auto"; }
+    }
+
+    function callOpenAiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "gpt-4o-mini") {
+        const key = apiKey || getOpenAiApiKey();
+        if (!key) {
+            onError("No OpenAI API key configured.");
+            return;
+        }
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "https://api.openai.com/v1/chat/completions",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${key}`
+            },
+            anonymous: false,
+            data: JSON.stringify({
+                model: modelName || "gpt-4o-mini",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: maxTokens || 4000,
+                temperature: 0.7
+            }),
+            onload: function (response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.choices && data.choices[0] && data.choices[0].message
+                    ? String(data.choices[0].message.content || "").trim() : "";
+
+                if (text) {
+                    onSuccess(text, modelName || "gpt-4o-mini");
+                } else {
+                    onError(response.responseText || `OpenAI HTTP Status ${response.status}`, response.status);
+                }
+            },
+            onerror: function (err) {
+                onError("Network error calling OpenAI API.");
+            }
+        });
+    }
+
+    function callGrokApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "grok-2-latest") {
+        const key = apiKey || getGrokApiKey();
+        if (!key) {
+            onError("No xAI Grok API key configured.");
+            return;
+        }
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "https://api.x.ai/v1/chat/completions",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${key}`
+            },
+            anonymous: false,
+            data: JSON.stringify({
+                model: modelName || "grok-2-latest",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: maxTokens || 4000,
+                temperature: 0.7
+            }),
+            onload: function (response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.choices && data.choices[0] && data.choices[0].message
+                    ? String(data.choices[0].message.content || "").trim() : "";
+
+                if (text) {
+                    onSuccess(text, modelName || "grok-2-latest");
+                } else {
+                    onError(response.responseText || `xAI Grok HTTP Status ${response.status}`, response.status);
+                }
+            },
+            onerror: function (err) {
+                onError("Network error calling xAI Grok API.");
+            }
+        });
+    }
+
+    // Smart Multi-AI Provider Failover Chain — uses vault keys with auto-rotation
+    function callMultiProviderAiApi(prompt, maxTokens, onSuccess, onError) {
+        // Build ordered list of providers to try based on which have active vault keys
+        // Priority: gemini first (most free), then openai, grok, openrouter, claude
+        const PROVIDER_ORDER = ["gemini", "openai", "grok", "openrouter", "claude"];
+
+        // Try a specific provider's vault keys in sequence
+        async function tryProviderVault(providerId, remainingKeys, onProviderFail) {
+            if (!remainingKeys || remainingKeys.length === 0) {
+                onProviderFail(`No active keys for ${providerId}`);
+                return;
+            }
+
+            const keyEntry = remainingKeys[0];
+            const restKeys = remainingKeys.slice(1);
+            const model = keyEntry.model || gmGet("selectedModel_" + providerId, null);
+
+            function onKeyFail(err, status) {
+                const is429 = (status === 429 || (err && err.toLowerCase && err.toLowerCase().includes("quota")));
+                console.warn(`[Job Assistant] ${providerId} key #${keyEntry.accountEmail || "?"} failed (${status || err}). Rotating...`);
+                if (is429 || status === 403) {
+                    rotateKeyOnFailure(providerId, keyEntry.key);
+                }
+                tryProviderVault(providerId, restKeys, onProviderFail);
+            }
+
+            if (providerId === "gemini") {
+                callGeminiApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail);
+            } else if (providerId === "openai") {
+                callOpenAiApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "gpt-4o-mini");
+            } else if (providerId === "grok") {
+                callGrokApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "grok-2-latest");
+            } else if (providerId === "openrouter") {
+                callOpenRouterApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "meta-llama/llama-3.3-70b-instruct:free");
+            } else if (providerId === "claude") {
+                callClaudeApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "claude-haiku-3-5");
+            } else {
+                onProviderFail("Unknown provider: " + providerId);
+            }
+        }
+
+        // Try providers in order
+        async function tryNextProvider(providerIdx) {
+            if (providerIdx >= PROVIDER_ORDER.length) {
+                onError("All AI providers exhausted. Please add more API keys in the 🤖 AI Provider Vault.");
+                return;
+            }
+            const pid = PROVIDER_ORDER[providerIdx];
+            const keys = getLocalKeysForProvider(pid).filter(k => k.active !== false);
+            if (keys.length === 0) {
+                tryNextProvider(providerIdx + 1);
+                return;
+            }
+            tryProviderVault(pid, keys, () => tryNextProvider(providerIdx + 1));
+        }
+
+        // Also respect legacy single-key fallbacks for backward compat
+        const legacyGemini  = [getGeminiApiKey()].filter(Boolean).map(k => ({ key: k, accountEmail: "", model: getSelectedGeminiModel(), active: true, failCount: 0 }));
+        const legacyOpenAi  = [getOpenAiApiKey()].filter(Boolean).map(k => ({ key: k, accountEmail: "", model: "gpt-4o-mini", active: true, failCount: 0 }));
+        const legacyGrok    = [getGrokApiKey()].filter(Boolean).map(k => ({ key: k, accountEmail: "", model: "grok-2-latest", active: true, failCount: 0 }));
+
+        // Merge vault keys + legacy keys (dedup by key value)
+        function mergeKeys(pid, legacy) {
+            const vault = getLocalKeysForProvider(pid).filter(k => k.active !== false);
+            const all = [...vault];
+            legacy.forEach(lk => { if (!all.find(v => v.key === lk.key)) all.push(lk); });
+            return all;
+        }
+
+        const geminiKeys    = mergeKeys("gemini", legacyGemini);
+        const openaiKeys    = mergeKeys("openai", legacyOpenAi);
+        const grokKeys      = mergeKeys("grok", legacyGrok);
+        const openrouterKeys = getLocalKeysForProvider("openrouter").filter(k => k.active !== false);
+        const claudeKeys    = getLocalKeysForProvider("claude").filter(k => k.active !== false);
+
+        const allProviderKeys = { gemini: geminiKeys, openai: openaiKeys, grok: grokKeys, openrouter: openrouterKeys, claude: claudeKeys };
+
+        async function tryNextProviderMerged(providerIdx) {
+            if (providerIdx >= PROVIDER_ORDER.length) {
+                onError("All AI providers exhausted. Please add more API keys in the 🤖 AI Provider Vault.");
+                return;
+            }
+            const pid = PROVIDER_ORDER[providerIdx];
+            const keys = allProviderKeys[pid] || [];
+            if (keys.length === 0) {
+                tryNextProviderMerged(providerIdx + 1);
+                return;
+            }
+            tryProviderVault(pid, keys, () => tryNextProviderMerged(providerIdx + 1));
+        }
+
+        tryNextProviderMerged(0);
+    }
+
+    // ── OpenRouter API (access 200+ models) ──────────────────────────────────
+    function callOpenRouterApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "meta-llama/llama-3.3-70b-instruct:free") {
+        if (!apiKey) { onError("No OpenRouter API key configured."); return; }
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "https://openrouter.ai/api/v1/chat/completions",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`,
+                "HTTP-Referer": "https://job-ai-backend.ahmed-mohammed8694.workers.dev",
+                "X-Title": "Job Assistant Premium"
+            },
+            anonymous: false,
+            data: JSON.stringify({ model: modelName, messages: [{ role: "user", content: prompt }], max_tokens: maxTokens || 4000 }),
+            onload: function(response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.choices && data.choices[0] && data.choices[0].message
+                    ? String(data.choices[0].message.content || "").trim() : "";
+                if (text) { onSuccess(text, modelName); }
+                else { onError(response.responseText || `OpenRouter HTTP ${response.status}`, response.status); }
+            },
+            onerror: () => onError("Network error calling OpenRouter API.")
+        });
+    }
+
+    // ── Anthropic Claude API ────────────────────────────────────────────────
+    function callClaudeApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "claude-haiku-3-5") {
+        if (!apiKey) { onError("No Claude API key configured."); return; }
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "https://api.anthropic.com/v1/messages",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01"
+            },
+            anonymous: false,
+            data: JSON.stringify({ model: modelName, max_tokens: maxTokens || 4000, messages: [{ role: "user", content: prompt }] }),
+            onload: function(response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.content && data.content[0] && data.content[0].text
+                    ? String(data.content[0].text || "").trim() : "";
+                if (text) { onSuccess(text, modelName); }
+                else { onError(response.responseText || `Claude HTTP ${response.status}`, response.status); }
+            },
+            onerror: () => onError("Network error calling Claude API.")
         });
     }
 
@@ -334,283 +599,351 @@ Product Adoption & Engagement, Windows Troubleshooting
         } catch (e) { return ""; }
     }
 
-    // Inject Google Identity Services (GIS) Library
-    if (!document.getElementById("google-gsi-client-script")) {
-        const script = document.createElement("script");
-        script.id = "google-gsi-client-script";
-        script.src = "https://accounts.google.com/gsi/client";
-        script.async = true;
-        script.defer = true;
-        document.head.appendChild(script);
-    }
+    // ── AI PROVIDER CONFIG ────────────────────────────────────────────────────
+    const AI_PROVIDERS = [
+        { id: "gemini",     label: "Gemini",      icon: "✨", color: "#58a6ff", bg: "rgba(56,139,253,0.12)",  border: "rgba(56,139,253,0.35)",  models: ["gemini-2.0-flash","gemini-1.5-pro-latest","gemini-1.5-flash-latest","gemini-2.0-flash-exp"],               apiLink: "https://aistudio.google.com/app/apikey",           apiLinkLabel: "Get Free Gemini Key" },
+        { id: "openai",     label: "ChatGPT",     icon: "🟢", color: "#3fb950", bg: "rgba(63,185,80,0.12)",   border: "rgba(63,185,80,0.35)",   models: ["gpt-4o","gpt-4o-mini","gpt-4-turbo","o3-mini","o1-mini"],                                                            apiLink: "https://platform.openai.com/api-keys",             apiLinkLabel: "Get OpenAI Key" },
+        { id: "grok",       label: "Grok",        icon: "🚀", color: "#f97316", bg: "rgba(249,115,22,0.12)",  border: "rgba(249,115,22,0.35)",  models: ["grok-2-latest","grok-3-latest","grok-beta"],                                                                         apiLink: "https://console.x.ai/",                            apiLinkLabel: "Get Grok Key" },
+        { id: "openrouter", label: "OpenRouter",  icon: "🔀", color: "#a371f7", bg: "rgba(163,113,247,0.12)", border: "rgba(163,113,247,0.35)", models: ["meta-llama/llama-3.3-70b-instruct:free","anthropic/claude-sonnet-4","google/gemini-2.0-flash-exp:free","deepseek/deepseek-chat","mistralai/mistral-large"], apiLink: "https://openrouter.ai/keys", apiLinkLabel: "Get OpenRouter Key" },
+        { id: "omniroute",  label: "OmniRoute",   icon: "🌐", color: "#f2cc60", bg: "rgba(242,204,96,0.12)",  border: "rgba(242,204,96,0.35)",  models: ["auto","cheapest","fastest"],                                                                                         apiLink: "https://omniroute.ai",                             apiLinkLabel: "Get OmniRoute Key" },
+        { id: "claude",     label: "Claude",      icon: "🧠", color: "#ff7b72", bg: "rgba(255,123,114,0.12)", border: "rgba(255,123,114,0.35)", models: ["claude-sonnet-4-5","claude-3-7-sonnet-latest","claude-haiku-3-5","claude-opus-4-5"],                                    apiLink: "https://console.anthropic.com/settings/keys",       apiLinkLabel: "Get Claude Key" }
+    ];
 
-    function getCustomGoogleClientId() {
+    // Helper: read a value from GM storage or localStorage
+    function gmGet(key, def) {
         try {
-            const gm = typeof GM_getValue === "function" ? GM_getValue("customGoogleClientId", "") : "";
-            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("customGoogleClientId") : "";
-            return (gm || ls || "").trim() || DEFAULT_GOOGLE_CLIENT_ID;
-        } catch(e) { return DEFAULT_GOOGLE_CLIENT_ID; }
+            const gm = typeof GM_getValue === "function" ? GM_getValue(key, def) : def;
+            const ls = typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
+            if (gm !== def && gm !== null && gm !== undefined) return gm;
+            if (ls !== null && ls !== undefined) return ls;
+        } catch(e) {}
+        return def;
+    }
+    function gmSet(key, val) {
+        try { if (typeof GM_setValue === "function") GM_setValue(key, val); } catch(e) {}
+        try { localStorage.setItem(key, val); } catch(e) {}
     }
 
-    // Custom Google OAuth2 Token Client Trigger (User's own Console Client ID)
-    function triggerCustomGoogleOAuth(customClientId) {
-        const clientId = customClientId || getCustomGoogleClientId();
-        if (!clientId) {
-            alert("Please paste your Google Cloud Console OAuth Client ID first.");
-            return;
-        }
+    // Get all locally stored keys for a provider (array)
+    function getLocalKeysForProvider(providerId) {
+        try {
+            const raw = gmGet("aiKeys_" + providerId, "");
+            return raw ? JSON.parse(raw) : [];
+        } catch(e) { return []; }
+    }
+    function setLocalKeysForProvider(providerId, keysArr) {
+        gmSet("aiKeys_" + providerId, JSON.stringify(keysArr));
+    }
 
-        if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
-            alert("Google Identity SDK is loading. Please click again in 2 seconds.");
-            return;
-        }
+    // Get next active key for a provider (local first, then tries DB rotation)
+    async function getNextActiveKey(providerId) {
+        const keys = getLocalKeysForProvider(providerId);
+        const active = keys.filter(k => k.active !== false);
+        if (active.length > 0) return active[0];
+        return null;
+    }
 
-        const client = google.accounts.oauth2.initTokenClient({
-            client_id: clientId,
-            scope: "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
-            callback: (tokenResponse) => {
-                if (tokenResponse && tokenResponse.access_token) {
-                    fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-                    })
-                    .then(res => res.json())
-                    .then(user => {
-                        console.log("[Job Assistant] Custom OAuth UserInfo:", user);
-                        const name = user.name || user.given_name || "";
-                        const email = user.email || "";
-
-                        if (email) {
-                            if (typeof GM_setValue === "function") {
-                                GM_setValue("googleAccountDisconnected", false);
-                                GM_setValue("connectedUserName", name);
-                                GM_setValue("connectedUserEmail", email);
-                                GM_setValue("customGoogleClientId", clientId);
-                            }
-                            try {
-                                localStorage.setItem("googleAccountDisconnected", "false");
-                                localStorage.setItem("connectedUserName", name);
-                                localStorage.setItem("connectedUserEmail", email);
-                                localStorage.setItem("customGoogleClientId", clientId);
-                            } catch(e) {}
-
-                            PROFILE.name = name || PROFILE.name;
-                            PROFILE.email = email || PROFILE.email;
-
-                            const nameInput = document.getElementById("userNameInput");
-                            const emailInput = document.getElementById("userEmailInput");
-                            const badge = document.getElementById("googleAccountStatusBadge");
-
-                            if (nameInput) nameInput.value = name;
-                            if (emailInput) emailInput.value = email;
-                            if (badge) {
-                                badge.style.background = "rgba(46,160,67,0.2)";
-                                badge.style.color = "#3fb950";
-                                badge.style.border = "1px solid rgba(46,160,67,0.4)";
-                                badge.innerHTML = "🟢 Gemini AI Connected";
-                            }
-
-                            alert(`🎉 Connected Google Account via Client ID!\n\nUser Name: ${name}\nGmail ID: ${email}`);
-                        }
-                    })
-                    .catch(err => {
-                        console.error("[Job Assistant] Error fetching UserInfo:", err);
-                        alert("Error fetching Google Account details with Client ID. Please verify authorized origins.");
-                    });
-                }
+    // Mark a key as failed locally, then call DB rotate
+    async function rotateKeyOnFailure(providerId, failedApiKey) {
+        let keys = getLocalKeysForProvider(providerId);
+        keys = keys.map(k => {
+            if (k.key === failedApiKey) {
+                k.failCount = (k.failCount || 0) + 1;
+                if (k.failCount >= 3) k.active = false;
             }
+            return k;
         });
+        // Move failed key to end
+        const failed = keys.filter(k => k.key === failedApiKey);
+        const rest   = keys.filter(k => k.key !== failedApiKey);
+        setLocalKeysForProvider(providerId, [...rest, ...failed]);
 
-        client.requestAccessToken();
-    }
-
-    // Direct Google Account Chooser Sign-In Handler using Official OAuth Client ID
-    function connectGoogleAccountDirect() {
-        triggerCustomGoogleOAuth(getCustomGoogleClientId());
-    }
-
-    function isGoogleAccountDisconnected() {
+        // Notify Cloudflare D1 via /api/keys/rotate (best-effort)
         try {
-            const gm = typeof GM_getValue === "function" ? GM_getValue("googleAccountDisconnected", false) : false;
-            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("googleAccountDisconnected") === "true" : false;
-            return Boolean(gm || ls);
-        } catch(e) { return false; }
+            const ownerEmail = gmGet("ownerEmail", "");
+            const keyEntry = keys.find(k => k.key === failedApiKey);
+            if (ownerEmail && keyEntry && keyEntry.dbId) {
+                await fetch(`${getWorkerUrl()}/api/keys/rotate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ keyId: keyEntry.dbId, ownerEmail, provider: providerId })
+                });
+            }
+        } catch(e) {}
+
+        // Return next active key
+        const updated = getLocalKeysForProvider(providerId);
+        const next = updated.filter(k => k.active !== false && k.key !== failedApiKey);
+        return next.length > 0 ? next[0] : null;
     }
 
     function getConnectedUserName() {
-        try {
-            const gm = typeof GM_getValue === "function" ? GM_getValue("connectedUserName", null) : null;
-            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("connectedUserName") : null;
-            if (gm !== null && gm !== undefined) return gm;
-            if (ls !== null && ls !== undefined) return ls;
-            if (isGoogleAccountDisconnected()) return "";
-            return PROFILE.name;
-        } catch(e) { return PROFILE.name; }
+        return gmGet("connectedUserName", PROFILE.name) || PROFILE.name;
     }
 
     function getConnectedUserEmail() {
-        try {
-            const gm = typeof GM_getValue === "function" ? GM_getValue("connectedUserEmail", null) : null;
-            const ls = typeof localStorage !== "undefined" ? localStorage.getItem("connectedUserEmail") : null;
-            if (gm !== null && gm !== undefined) return gm;
-            if (ls !== null && ls !== undefined) return ls;
-            if (isGoogleAccountDisconnected()) return "";
-            return PROFILE.email;
-        } catch(e) { return PROFILE.email; }
+        return gmGet("connectedUserEmail", PROFILE.email) || PROFILE.email;
     }
 
-    function showGeminiKeyModal() {
-        const old = document.getElementById("gemini-key-modal");
+    // ── showAiProviderModal — Step 1: Provider Grid ────────────────────────────
+    function showAiProviderModal() {
+        // Alias: clicking the 🔑 API Key button now opens this
+        const old = document.getElementById("ai-provider-modal");
         if (old) old.remove();
 
-        const currentModel = getSelectedGeminiModel();
-        const disconnected = isGoogleAccountDisconnected();
-        const isConnected = !disconnected;
-        const currentName = getConnectedUserName();
-        const currentEmail = getConnectedUserEmail();
+        // Also remove legacy modal if open
+        const legacyOld = document.getElementById("gemini-key-modal");
+        if (legacyOld) legacyOld.remove();
 
         const modal = document.createElement("div");
-        modal.id = "gemini-key-modal";
-        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:440px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:16px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 60px rgba(0,0,0,0.85);font-family:system-ui,-apple-system,sans-serif;";
+        modal.id = "ai-provider-modal";
+        modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:18px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 70px rgba(0,0,0,0.9);font-family:system-ui,-apple-system,sans-serif;";
+
+        // Build provider grid
+        const providerCards = AI_PROVIDERS.map(p => {
+            const keys = getLocalKeysForProvider(p.id);
+            const count = keys.length;
+            const active = keys.filter(k => k.active !== false).length;
+            return `<div id="pCard_${p.id}" data-pid="${p.id}" style="background:${p.bg};border:1px solid ${p.border};border-radius:14px;padding:14px 10px;cursor:pointer;text-align:center;transition:all .2s;user-select:none;position:relative;">
+                <div style="font-size:26px;margin-bottom:6px;">${p.icon}</div>
+                <div style="font-weight:700;color:${p.color};font-size:12px;">${p.label}</div>
+                <div style="font-size:10px;color:#8b949e;margin-top:4px;">${count > 0 ? `<span style="color:${p.color};">${active}/${count} keys</span>` : "No keys"}</div>
+                ${count > 0 ? `<div style="position:absolute;top:6px;right:8px;width:8px;height:8px;border-radius:50%;background:${active > 0 ? "#3fb950" : "#f85149"};"></div>` : ""}
+            </div>`;
+        }).join("");
 
         modal.innerHTML = `
-            <div style="padding:18px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #21262d;padding-bottom:10px;">
-                    <strong style="color:#58a6ff;font-size:14px;">🤖 Google Account & Gemini AI Setup</strong>
-                    <span id="closeGeminiModal" style="cursor:pointer;font-size:16px;color:#8b949e;">✖</span>
+            <div style="padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <strong style="color:#f2cc60;font-size:15px;">🤖 AI Provider Vault</strong>
+                    <span id="closeAiProviderModal" style="cursor:pointer;font-size:18px;color:#8b949e;line-height:1;">✖</span>
                 </div>
+                <p style="color:#8b949e;font-size:11px;margin:0 0 16px;">Select a provider to manage API keys. Keys auto-rotate when quota is hit.</p>
 
-                <!-- GOOGLE ACCOUNT STATUS CARD -->
-                <div style="background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,0.25);border-radius:12px;padding:14px;margin-bottom:14px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <strong style="color:#79c0ff;font-size:12px;">👤 Google Account Profile:</strong>
-                        <span id="googleAccountStatusBadge" style="background:${isConnected ? "rgba(46,160,67,0.2)" : "rgba(248,81,73,0.2)"};color:${isConnected ? "#3fb950" : "#f85149"};border:1px solid ${isConnected ? "rgba(46,160,67,0.4)" : "rgba(248,81,73,0.4)"};border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;">
-                            ${isConnected ? "🟢 Gemini AI Connected" : "🔴 Disconnected"}
-                        </span>
-                    </div>
-
-                    <div style="margin-bottom:10px;">
-                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
-                            User Name:
-                        </label>
-                        <input type="text" id="userNameInput" value="${currentName}" placeholder="Enter User Name (e.g. Mohammed Ahmed)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:11.5px;outline:none;" />
-                    </div>
-
-                    <div style="margin-bottom:10px;">
-                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
-                            Gmail Address:
-                        </label>
-                        <input type="text" id="userEmailInput" value="${currentEmail}" placeholder="Enter Gmail Address (e.g. user@gmail.com)" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-size:11.5px;outline:none;" />
-                    </div>
-
-                    <div style="margin-bottom:12px;">
-                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">
-                            🔑 Custom Google OAuth Client ID (Optional):
-                        </label>
-                        <div style="display:flex;gap:6px;">
-                            <input type="text" id="googleClientIdInput" value="${getCustomGoogleClientId()}" placeholder="Paste Client ID (e.g. 12345...apps.googleusercontent.com)" style="flex:1;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-family:monospace;font-size:11px;outline:none;" />
-                            <button id="runCustomOAuthBtn" style="background:#238636;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:11px;">
-                                🔐 Connect
-                            </button>
-                        </div>
-                    </div>
-
-                    <div style="text-align:center;">
-                        <button id="connectGoogleBtn" style="width:100%;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;border:none;padding:11px 14px;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer;box-shadow:0 4px 12px rgba(66,133,244,0.35);">
-                            🌐 1-Click Select & Sign in with Google Account (gemini.google.com) →
-                        </button>
-                    </div>
-                </div>
-
-                <!-- MODEL DROPDOWN SELECTOR -->
+                <!-- Owner Email -->
                 <div style="margin-bottom:14px;">
-                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:6px;font-size:11px;">
-                        🎯 Select Gemini AI Model:
-                    </label>
-                    <select id="geminiModelSelect" style="width:100%;padding:9px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#f2cc60;font-size:11.5px;font-weight:600;outline:none;cursor:pointer;">
-                        <option value="gemini-2.0-flash" ${currentModel === "gemini-2.0-flash" ? "selected" : ""}>⚡ gemini-2.0-flash (Fast & Modern - Recommended)</option>
-                        <option value="gemini-1.5-flash-latest" ${currentModel === "gemini-1.5-flash-latest" ? "selected" : ""}>🚀 gemini-1.5-flash-latest (Stable Latest)</option>
-                        <option value="gemini-1.5-pro-latest" ${currentModel === "gemini-1.5-pro-latest" ? "selected" : ""}>🧠 gemini-1.5-pro-latest (Executive Reasoning)</option>
-                        <option value="gemini-2.0-flash-exp" ${currentModel === "gemini-2.0-flash-exp" ? "selected" : ""}>🔬 gemini-2.0-flash-exp (Experimental)</option>
-                    </select>
+                    <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">👤 Your Email (for key vault sync):</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="ownerEmailInput" value="${gmGet("ownerEmail", PROFILE.email)}" placeholder="your@email.com" style="flex:1;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#58a6ff;font-size:11.5px;outline:none;" />
+                        <button id="saveOwnerEmailBtn" style="background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:11px;">💾 Save</button>
+                    </div>
                 </div>
 
-                <!-- BUTTON ACTIONS -->
-                <div style="display:flex;gap:8px;">
-                    <button id="saveGeminiKeyBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:11.5px;">
-                        💾 Save Account Settings
-                    </button>
-                    <button id="clearGeminiKeyBtn" style="background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:500;font-size:11.5px;">
-                        🚪 Logout / Disconnect Gmail Account
-                    </button>
+                <!-- Provider Grid -->
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+                    ${providerCards}
+                </div>
+
+                <div style="background:#161b22;border:1px solid #21262d;border-radius:10px;padding:10px;font-size:10.5px;color:#8b949e;line-height:1.6;">
+                    💡 <strong style="color:#f2cc60;">How it works:</strong> Add multiple API keys per provider. When one key hits its token limit (Error 429), the script automatically switches to your next available key — no manual action needed.
                 </div>
             </div>
         `;
 
         document.body.appendChild(modal);
+        modal.querySelector("#closeAiProviderModal").onclick = () => modal.remove();
 
-        modal.querySelector("#closeGeminiModal").onclick = () => modal.remove();
+        modal.querySelector("#saveOwnerEmailBtn").onclick = () => {
+            const em = modal.querySelector("#ownerEmailInput").value.trim();
+            if (em) {
+                gmSet("ownerEmail", em);
+                gmSet("connectedUserEmail", em);
+                PROFILE.email = em;
+                modal.querySelector("#saveOwnerEmailBtn").textContent = "✅ Saved!";
+                setTimeout(() => { if (modal.querySelector("#saveOwnerEmailBtn")) modal.querySelector("#saveOwnerEmailBtn").textContent = "💾 Save"; }, 1500);
+            }
+        };
 
-        const connBtn = modal.querySelector("#connectGoogleBtn");
-        if (connBtn) connBtn.onclick = () => connectGoogleAccountDirect();
+        // Provider card click → show config panel
+        AI_PROVIDERS.forEach(p => {
+            const card = modal.querySelector(`#pCard_${p.id}`);
+            if (card) {
+                card.onmouseenter = () => { card.style.transform = "translateY(-3px)"; card.style.boxShadow = `0 8px 24px rgba(0,0,0,0.5)`; };
+                card.onmouseleave = () => { card.style.transform = ""; card.style.boxShadow = ""; };
+                card.onclick = () => {
+                    const em = modal.querySelector("#ownerEmailInput").value.trim();
+                    if (em) { gmSet("ownerEmail", em); gmSet("connectedUserEmail", em); PROFILE.email = em; }
+                    modal.remove();
+                    showProviderConfigPanel(p.id);
+                };
+            }
+        });
+    }
 
-        const customOAuthBtn = modal.querySelector("#runCustomOAuthBtn");
-        if (customOAuthBtn) {
-            customOAuthBtn.onclick = () => {
-                const cId = modal.querySelector("#googleClientIdInput").value.trim();
-                triggerCustomGoogleOAuth(cId);
+    // Alias for backward compat (old code references showGeminiKeyModal)
+    function showGeminiKeyModal() { showAiProviderModal(); }
+
+    // ── showProviderConfigPanel — Step 2: Per-Provider Key Management ──────────
+    function showProviderConfigPanel(providerId) {
+        const old = document.getElementById("ai-provider-config-modal");
+        if (old) old.remove();
+
+        const p = AI_PROVIDERS.find(x => x.id === providerId);
+        if (!p) return;
+
+        let keys = getLocalKeysForProvider(providerId);
+        const ownerEmail = gmGet("ownerEmail", PROFILE.email);
+
+        function renderModal() {
+            const existMod = document.getElementById("ai-provider-config-modal");
+            if (existMod) existMod.remove();
+
+            const mod = document.createElement("div");
+            mod.id = "ai-provider-config-modal";
+            mod.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:500px;max-height:92vh;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:18px;z-index:2147483647;color:#c9d1d9;font-size:12px;box-shadow:0 25px 70px rgba(0,0,0,0.9);font-family:system-ui,-apple-system,sans-serif;";
+
+            // Build key list rows
+            const keyRows = keys.length === 0
+                ? `<div style="text-align:center;color:#8b949e;padding:18px;font-size:11px;">No keys saved yet. Add your first key below.</div>`
+                : keys.map((k, i) => `
+                <div style="display:flex;align-items:center;gap:6px;background:${k.active === false ? "rgba(248,81,73,0.07)" : "rgba(56,139,253,0.07)"};border:1px solid ${k.active === false ? "rgba(248,81,73,0.25)" : "rgba(56,139,253,0.2)"};border-radius:10px;padding:9px 10px;margin-bottom:6px;">
+                    <span style="color:#8b949e;font-size:10px;min-width:22px;">#${i + 1}</span>
+                    <div style="flex:1;min-width:0;">
+                        <div style="color:${p.color};font-family:monospace;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${k.key.slice(0, 6)}...${k.key.slice(-4)}</div>
+                        <div style="color:#8b949e;font-size:10px;margin-top:2px;">${k.accountEmail || "No email"} · ${k.model || "Default model"} · Fails: ${k.failCount || 0}</div>
+                    </div>
+                    <span style="width:8px;height:8px;border-radius:50%;background:${k.active === false ? "#f85149" : "#3fb950"};flex-shrink:0;"></span>
+                    <button data-kidx="${i}" data-action="toggle" style="background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:4px 7px;cursor:pointer;font-size:10px;">${k.active === false ? "Enable" : "Pause"}</button>
+                    <button data-kidx="${i}" data-action="delete" style="background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3);border-radius:6px;padding:4px 7px;cursor:pointer;font-size:10px;">🗑</button>
+                </div>`).join("");
+
+            // Model options
+            const modelOpts = p.models.map(m => `<option value="${m}">${m}</option>`).join("");
+
+            const currentSelectedModel = gmGet("selectedModel_" + p.id, p.models[0]);
+
+            mod.innerHTML = `
+                <div style="padding:20px;">
+                    <!-- Header -->
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button id="backToProviderGrid" style="background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:7px;padding:5px 10px;cursor:pointer;font-size:11px;">← Back</button>
+                            <strong style="color:${p.color};font-size:14px;">${p.icon} ${p.label} API Keys</strong>
+                        </div>
+                        <span id="closeProviderConfigModal" style="cursor:pointer;font-size:18px;color:#8b949e;">✖</span>
+                    </div>
+                    <p style="color:#8b949e;font-size:10.5px;margin:0 0 14px;">Keys are tried in order #1 → #2 → #3. On 429/quota error the next key is used automatically.</p>
+
+                    <!-- Default Model -->
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;color:#c9d1d9;margin-bottom:4px;font-size:11px;">🎯 Default Model for ${p.label}:</label>
+                        <select id="providerModelSelect" style="width:100%;padding:9px;background:#161b22;border:1px solid #30363d;border-radius:8px;color:${p.color};font-size:11.5px;font-weight:600;outline:none;cursor:pointer;">
+                            ${modelOpts}
+                        </select>
+                    </div>
+
+                    <!-- Saved Keys List -->
+                    <div style="margin-bottom:12px;">
+                        <div style="font-weight:600;color:#c9d1d9;font-size:11px;margin-bottom:8px;">🔑 Saved Keys (${keys.length}):</div>
+                        <div id="keyListContainer">${keyRows}</div>
+                    </div>
+
+                    <!-- Add New Key -->
+                    <div style="background:rgba(56,139,253,0.05);border:1px solid rgba(56,139,253,0.2);border-radius:12px;padding:14px;margin-bottom:14px;">
+                        <div style="font-weight:600;color:#79c0ff;font-size:11.5px;margin-bottom:10px;">➕ Add New Key:</div>
+                        <div style="margin-bottom:8px;">
+                            <label style="display:block;font-size:10.5px;color:#8b949e;margin-bottom:4px;">Account Email (for this key):</label>
+                            <input type="email" id="newKeyEmail" placeholder="account@gmail.com" style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:7px;color:#e6edf3;font-size:11px;outline:none;" />
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                <label style="font-size:10.5px;color:#8b949e;">API Key:</label>
+                                <a href="${p.apiLink}" target="_blank" style="color:${p.color};font-size:10px;text-decoration:none;">${p.apiLinkLabel} →</a>
+                            </div>
+                            <input type="text" id="newKeyValue" placeholder="Paste your ${p.label} API key here..." style="width:100%;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:7px;color:${p.color};font-family:monospace;font-size:11px;outline:none;" />
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button id="addKeyToVaultBtn" style="flex:1;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:700;font-size:11.5px;">+ Add Key to Vault</button>
+                            <button id="syncToD1Btn" style="background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:600;font-size:11px;">☁ Sync All to D1</button>
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div id="providerConfigStatus" style="min-height:24px;text-align:center;font-size:11px;color:#3fb950;"></div>
+                </div>
+            `;
+
+            document.body.appendChild(mod);
+
+            // Set current model selection
+            const sel = mod.querySelector("#providerModelSelect");
+            if (sel) {
+                sel.value = currentSelectedModel;
+                sel.onchange = () => gmSet("selectedModel_" + p.id, sel.value);
+            }
+
+            const status = mod.querySelector("#providerConfigStatus");
+            function showStatus(msg, color = "#3fb950") {
+                if (status) { status.style.color = color; status.textContent = msg; setTimeout(() => { if (status) status.textContent = ""; }, 3000); }
+            }
+
+            mod.querySelector("#closeProviderConfigModal").onclick = () => mod.remove();
+            mod.querySelector("#backToProviderGrid").onclick = () => { mod.remove(); showAiProviderModal(); };
+
+            // Toggle / Delete key buttons
+            mod.querySelectorAll("[data-action=toggle]").forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.dataset.kidx);
+                    keys[idx].active = keys[idx].active === false ? true : false;
+                    setLocalKeysForProvider(providerId, keys);
+                    renderModal();
+                };
+            });
+            mod.querySelectorAll("[data-action=delete]").forEach(btn => {
+                btn.onclick = async () => {
+                    const idx = parseInt(btn.dataset.kidx);
+                    const k = keys[idx];
+                    keys.splice(idx, 1);
+                    setLocalKeysForProvider(providerId, keys);
+                    // Delete from D1 if we have a DB id
+                    if (k.dbId && ownerEmail) {
+                        try { await fetch(`${getWorkerUrl()}/api/keys/delete/${k.dbId}?ownerEmail=${encodeURIComponent(ownerEmail)}`, { method: "DELETE" }); } catch(e) {}
+                    }
+                    renderModal();
+                };
+            });
+
+            // Add new key
+            mod.querySelector("#addKeyToVaultBtn").onclick = () => {
+                const newEmail = mod.querySelector("#newKeyEmail").value.trim();
+                const newKey   = mod.querySelector("#newKeyValue").value.trim();
+                const model    = mod.querySelector("#providerModelSelect").value;
+                if (!newKey) { showStatus("⚠️ Please paste an API key first.", "#f85149"); return; }
+                // Avoid duplicates
+                if (keys.find(k => k.key === newKey)) { showStatus("⚠️ This key is already in your vault.", "#f97316"); return; }
+                keys.push({ key: newKey, accountEmail: newEmail, model, active: true, failCount: 0, dbId: null });
+                setLocalKeysForProvider(providerId, keys);
+                // Also update legacy storage for backward compat
+                if (providerId === "gemini") gmSet("geminiApiKey", newKey);
+                if (providerId === "openai") gmSet("openAiApiKey", newKey);
+                if (providerId === "grok")   gmSet("grokApiKey",   newKey);
+                gmSet("selectedModel_" + providerId, model);
+                mod.querySelector("#newKeyEmail").value = "";
+                mod.querySelector("#newKeyValue").value = "";
+                showStatus(`✅ Key added! You now have ${keys.length} key(s) for ${p.label}.`);
+                renderModal();
+            };
+
+            // Sync all keys to Cloudflare D1
+            mod.querySelector("#syncToD1Btn").onclick = async () => {
+                if (!ownerEmail) { showStatus("⚠️ Set your email first on the provider selection screen.", "#f85149"); return; }
+                showStatus("⏳ Syncing to Cloudflare D1...", "#f2cc60");
+                let synced = 0;
+                for (const k of keys) {
+                    try {
+                        const res = await fetch(`${getWorkerUrl()}/api/keys/save`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ ownerEmail, provider: p.id, apiKey: k.key, accountEmail: k.accountEmail, modelName: k.model })
+                        });
+                        if (res.ok) synced++;
+                    } catch(e) {}
+                }
+                showStatus(`✅ Synced ${synced}/${keys.length} keys to Cloudflare D1 Vault.`);
             };
         }
 
-        modal.querySelector("#saveGeminiKeyBtn").onclick = () => {
-            const newName = modal.querySelector("#userNameInput").value.trim();
-            const newEmail = modal.querySelector("#userEmailInput").value.trim();
-            const selectedModelVal = modal.querySelector("#geminiModelSelect").value;
-
-            if (typeof GM_setValue === "function") {
-                GM_setValue("googleAccountDisconnected", false);
-                GM_setValue("connectedUserName", newName);
-                GM_setValue("connectedUserEmail", newEmail);
-                GM_setValue("selectedGeminiModel", selectedModelVal);
-            }
-            try {
-                localStorage.setItem("googleAccountDisconnected", "false");
-                localStorage.setItem("connectedUserName", newName);
-                localStorage.setItem("connectedUserEmail", newEmail);
-                localStorage.setItem("selectedGeminiModel", selectedModelVal);
-            } catch (e) { }
-
-            if (newName) PROFILE.name = newName;
-            if (newEmail) PROFILE.email = newEmail;
-
-            alert(`✅ Google Account Details Saved!\n\nConnected User: ${newName || "N/A"}\nConnected Gmail: ${newEmail || "N/A"}\nSelected Model: ${selectedModelVal}`);
-            modal.remove();
-        };
-
-        modal.querySelector("#clearGeminiKeyBtn").onclick = () => {
-            modal.querySelector("#userNameInput").value = "";
-            modal.querySelector("#userEmailInput").value = "";
-
-            if (typeof GM_setValue === "function") {
-                GM_setValue("googleAccountDisconnected", true);
-                GM_setValue("connectedUserName", "");
-                GM_setValue("connectedUserEmail", "");
-                GM_setValue("geminiApiKey", "");
-                GM_setValue("selectedGeminiModel", "");
-            }
-            try {
-                localStorage.setItem("googleAccountDisconnected", "true");
-                localStorage.setItem("connectedUserName", "");
-                localStorage.setItem("connectedUserEmail", "");
-                localStorage.setItem("geminiApiKey", "");
-                localStorage.setItem("selectedGeminiModel", "");
-            } catch (e) { }
-
-            // Open Google logout endpoint to sign out session
-            window.open("https://accounts.google.com/Logout", "_blank");
-
-            alert("🚪 Disconnected Google Account!\n\nOld user profile cleared & Google session logged out.");
-            modal.remove();
-        };
+        renderModal();
     }
 
     function getDefaultAiPromptTemplate(type = "email") {
@@ -803,32 +1136,12 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
             .replace(/\{JOB_DESCRIPTION\}/g, freshJd || "Job Description not fully available — customize based on Job Title and Company.")
             .replace(/\{STYLE_INSTRUCTIONS\}/g, styleNote);
 
-        GM_xmlhttpRequest({
-            method: "POST",
-            url: GEMINI_API_URL,
-            headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-            anonymous: true,
-            data: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
-            }),
-            onload: function (response) {
-                const data = parseJsonSafe(response.responseText || "");
-                const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
-                    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-                    ? String(data.candidates[0].content.parts[0].text || "").trim() : "";
-                if (text) {
-                    console.log("[Job Assistant][Gemini] Generated fresh", type, "message (", text.length, "chars ) for", freshTitle);
-                    onDone(text, false);
-                } else {
-                    console.error("[Job Assistant] Gemini returned no usable text, falling back to template.", data);
-                    onDone(staticFallback, true);
-                }
-            },
-            onerror: function (err) {
-                console.error("[Job Assistant] Gemini API call failed, falling back to template.", err);
-                onDone(staticFallback, true);
-            }
+        callMultiProviderAiApi(prompt, 1200, (text, modelUsed) => {
+            console.log("[Job Assistant][Multi-AI] Generated fresh", type, "message via", modelUsed, "(", text.length, "chars ) for", freshTitle);
+            onDone(text, false);
+        }, (err) => {
+            console.error("[Job Assistant] Multi-AI call failed, falling back to static template.", err);
+            onDone(staticFallback, true);
         });
     }
 

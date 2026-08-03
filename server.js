@@ -245,6 +245,134 @@ app.put("/api/update-status/:id", async (c) => {
   }
 });
 
+// ── AI KEY VAULT ENDPOINTS ──────────────────────────────────────────────────
+
+// Save a new API key to the vault (one owner can have many keys per provider)
+app.post("/api/keys/save", async (c) => {
+  try {
+    const { ownerEmail, provider, apiKey, accountEmail, modelName } = await c.req.json();
+    if (!ownerEmail || !provider || !apiKey) {
+      return c.json({ error: "Missing required fields: ownerEmail, provider, apiKey" }, 400);
+    }
+
+    // Get current max priority for this owner+provider
+    const existing = await executeQuery(
+      c,
+      `SELECT MAX(priority) as maxP FROM user_api_keys WHERE owner_email = ? AND provider = ?`,
+      [ownerEmail, provider]
+    );
+    const nextPriority = ((existing[0]?.maxP ?? -1) + 1);
+
+    await executeQuery(
+      c,
+      `INSERT INTO user_api_keys (owner_email, provider, api_key, account_email, model_name, priority, is_active, fail_count)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 0)`,
+      [ownerEmail, provider, apiKey, accountEmail || "", modelName || "", nextPriority]
+    );
+
+    return c.json({ success: true, message: `Saved ${provider} key (#${nextPriority}) for ${ownerEmail}` });
+  } catch (err) {
+    console.error("Error saving API key:", err);
+    return c.json({ error: "Failed to save API key" }, 500);
+  }
+});
+
+// List all active keys for a provider owned by this user
+app.get("/api/keys/list", async (c) => {
+  try {
+    const ownerEmail = c.req.query("ownerEmail");
+    const provider = c.req.query("provider");
+    if (!ownerEmail) return c.json({ error: "ownerEmail query param required" }, 400);
+
+    const sql = provider
+      ? `SELECT id, provider, account_email, model_name, priority, is_active, fail_count, last_used FROM user_api_keys WHERE owner_email = ? AND provider = ? ORDER BY priority ASC`
+      : `SELECT id, provider, account_email, model_name, priority, is_active, fail_count, last_used FROM user_api_keys WHERE owner_email = ? ORDER BY provider, priority ASC`;
+    const params = provider ? [ownerEmail, provider] : [ownerEmail];
+
+    const keys = await executeQuery(c, sql, params);
+    return c.json(keys);
+  } catch (err) {
+    console.error("Error listing API keys:", err);
+    return c.json({ error: "Failed to list API keys" }, 500);
+  }
+});
+
+// Get the next active key for a provider (for auto-rotation use)
+app.get("/api/keys/next", async (c) => {
+  try {
+    const ownerEmail = c.req.query("ownerEmail");
+    const provider = c.req.query("provider");
+    if (!ownerEmail || !provider) return c.json({ error: "ownerEmail and provider required" }, 400);
+
+    const keys = await executeQuery(
+      c,
+      `SELECT id, api_key, account_email, model_name FROM user_api_keys
+       WHERE owner_email = ? AND provider = ? AND is_active = 1
+       ORDER BY priority ASC LIMIT 1`,
+      [ownerEmail, provider]
+    );
+
+    if (!keys.length) return c.json({ error: "No active keys found for this provider" }, 404);
+    return c.json(keys[0]);
+  } catch (err) {
+    console.error("Error getting next key:", err);
+    return c.json({ error: "Failed to get next key" }, 500);
+  }
+});
+
+// Mark a key as failed (quota hit), rotate to next
+app.post("/api/keys/rotate", async (c) => {
+  try {
+    const { keyId, ownerEmail, provider } = await c.req.json();
+    if (!keyId || !ownerEmail || !provider) return c.json({ error: "keyId, ownerEmail, provider required" }, 400);
+
+    // Increment fail_count for the failed key; deactivate if fail_count >= 3
+    await executeQuery(
+      c,
+      `UPDATE user_api_keys SET fail_count = fail_count + 1,
+       is_active = CASE WHEN fail_count + 1 >= 3 THEN 0 ELSE 1 END
+       WHERE id = ?`,
+      [keyId]
+    );
+
+    // Return next active key for this provider
+    const keys = await executeQuery(
+      c,
+      `SELECT id, api_key, account_email, model_name FROM user_api_keys
+       WHERE owner_email = ? AND provider = ? AND is_active = 1 AND id != ?
+       ORDER BY priority ASC LIMIT 1`,
+      [ownerEmail, provider, keyId]
+    );
+
+    if (!keys.length) return c.json({ error: "No more active keys for this provider" }, 404);
+    return c.json({ success: true, nextKey: keys[0] });
+  } catch (err) {
+    console.error("Error rotating key:", err);
+    return c.json({ error: "Failed to rotate key" }, 500);
+  }
+});
+
+// Delete a key from the vault
+app.delete("/api/keys/delete/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const ownerEmail = c.req.query("ownerEmail");
+    if (!ownerEmail) return c.json({ error: "ownerEmail required" }, 400);
+
+    await executeQuery(
+      c,
+      `DELETE FROM user_api_keys WHERE id = ? AND owner_email = ?`,
+      [id, ownerEmail]
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting key:", err);
+    return c.json({ error: "Failed to delete key" }, 500);
+  }
+});
+
+
+
 // Local Node.js server runner (when running npm run dev)
 if (process.env.NODE_ENV !== "production") {
   const port = Number(process.env.PORT) || 5000;
