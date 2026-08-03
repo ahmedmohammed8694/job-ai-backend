@@ -756,7 +756,8 @@ Product Adoption & Engagement, Windows Troubleshooting
     }
 
     function getConnectedUserEmail() {
-        return gmGet("connectedUserEmail", PROFILE.email) || PROFILE.email;
+        const email = gmGet("connectedUserEmail", PROFILE.email) || PROFILE.email;
+        return (email || "").toLowerCase().trim();
     }
 
     // ── showAiProviderModal — Step 1: Provider Grid ────────────────────────────
@@ -2598,14 +2599,11 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         const jd = extractJobDescriptionText() || info.jdText || STATE.lastObservedJdText || "";
         if (jd) { STATE.lastObservedJdText = jd; info.jdText = jd; info.jobDescription = jd; }
         const ats = calculateAtsScore(jd); info.atsScore = ats; STATE.currentJob = info;
-        const already = isJobLoggedInSession(info) || STATE.currentJobAlreadyLogged;
         const go = () => { if (typeof runAction === "function") runAction(info, ats); };
-        if (!already) {
-            ensureSilentLog(info, {
-                applyStatus: options && options.applyStatus ? options.applyStatus : "Logged", ats,
-                hrName: options && options.hrName ? options.hrName : "", hrEmail: options && options.hrEmail ? options.hrEmail : ""
-            }, go);
-        } else go();
+        ensureSilentLog(info, {
+            applyStatus: options && options.applyStatus ? options.applyStatus : "Logged", ats,
+            hrName: options && options.hrName ? options.hrName : "", hrEmail: options && options.hrEmail ? options.hrEmail : ""
+        }, go);
     }
 
     // ── RECRUITER MODAL (appended to document.body, not shadow) ──

@@ -198,7 +198,7 @@ app.post("/api/track", async (c) => {
       salary, email, phone, jdText, coverLetter, whatsAppMessage, emailMessage, atsScore
     } = body;
     
-    const ownerEmail = userEmail || "ahmed.mohammed8694@gmail.com";
+    const ownerEmail = (userEmail || "ahmed.mohammed8694@gmail.com").toLowerCase().trim();
     const appStatus = status || "Applied";
     const createdAt = new Date().toISOString();
 
@@ -251,7 +251,7 @@ app.post("/api/track", async (c) => {
 // Get Applications
 app.get("/api/applications", async (c) => {
   try {
-    const email = c.req.query("email") || "ahmed.mohammed8694@gmail.com";
+    const email = (c.req.query("email") || "ahmed.mohammed8694@gmail.com").toLowerCase().trim();
     const apps = await executeQuery(
       c,
       `SELECT * FROM applications WHERE userEmail = ? ORDER BY createdAt DESC`,
@@ -271,7 +271,7 @@ app.put("/api/update-status/:id", async (c) => {
   try {
     const { status, userEmail } = await c.req.json();
     const id = c.req.param("id");
-    const email = userEmail || "ahmed.mohammed8694@gmail.com";
+    const email = (userEmail || "ahmed.mohammed8694@gmail.com").toLowerCase().trim();
 
     await executeQuery(
       c,
@@ -491,7 +491,7 @@ app.delete("/api/keys/delete/:id", async (c) => {
 
 // Render Job Dashboard Page
 app.get("/dashboard", async (c) => {
-  const email = c.req.query("email") || "ahmed.mohammed8694@gmail.com";
+  const email = (c.req.query("email") || "ahmed.mohammed8694@gmail.com").toLowerCase().trim();
   
   try {
     // Fetch all applications for this email
@@ -1019,6 +1019,98 @@ app.get("/dashboard", async (c) => {
       font-weight: 600;
     }
 
+    .dashboard-tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 10px;
+    }
+    .dash-tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 10px 20px;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: background 0.2s, color 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dash-tab-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+    }
+    .dash-tab-btn.active {
+      background: linear-gradient(135deg, #1f6feb, #2188ff);
+      color: #fff;
+    }
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 24px;
+      margin-top: 12px;
+    }
+    .analytics-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: var(--shadow-main);
+    }
+    .analytics-card h3 {
+      margin-top: 0;
+      margin-bottom: 16px;
+      font-size: 16px;
+      color: #fff;
+      font-weight: 700;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 10px;
+    }
+    .analytics-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    .analytics-table th, .analytics-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .analytics-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .progress-bar-container {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      overflow: hidden;
+      height: 10px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #58a6ff, #1f6feb);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .progress-bar-fill.status-applied {
+      background: linear-gradient(90deg, #58a6ff, #1f6feb);
+    }
+    .progress-bar-fill.status-interviewing {
+      background: linear-gradient(90deg, #d3c6ff, #8a63f2);
+    }
+    .progress-bar-fill.status-offered {
+      background: linear-gradient(90deg, #56e39f, #2ea043);
+    }
+    .progress-bar-fill.status-rejected {
+      background: linear-gradient(90deg, #ff7b72, #f85149);
+    }
+
     @media (max-width: 768px) {
       .details-row {
         grid-template-columns: 1fr;
@@ -1102,28 +1194,98 @@ app.get("/dashboard", async (c) => {
       </button>
     </div>
 
-    <!-- Table -->
-    <div class="table-container">
-      <table id="appsTable">
-        <thead>
-          <tr>
-            <th>Role</th>
-            <th>Company</th>
-            <th>Portal</th>
-            <th>Location</th>
-            <th>Salary</th>
-            <th>Email ID</th>
-            <th>Phone Number</th>
-            <th>ATS Score</th>
-            <th>Apply Date</th>
-            <th>Status</th>
-            <th>Templates & Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody">
-          <!-- Rows dynamically inserted -->
-        </tbody>
-      </table>
+    <!-- Dashboard Tab Switchers -->
+    <div class="dashboard-tabs">
+      <button class="dash-tab-btn active" data-tab="applications-tab">📋 Applications List</button>
+      <button class="dash-tab-btn" data-tab="analytics-tab">📊 Analytics & Insights</button>
+    </div>
+
+    <!-- Tab 1: Applications List -->
+    <div id="applications-tab" class="dash-tab-content">
+      <div class="table-container">
+        <table id="appsTable">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Company</th>
+              <th>Portal</th>
+              <th>Location</th>
+              <th>Salary</th>
+              <th>Email ID</th>
+              <th>Phone Number</th>
+              <th>ATS Score</th>
+              <th>Apply Date</th>
+              <th>Status</th>
+              <th>Templates & Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Rows dynamically inserted -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 2: Analytics & Insights -->
+    <div id="analytics-tab" class="dash-tab-content" style="display: none;">
+      <div class="analytics-grid">
+        <!-- Portal Breakdown Card -->
+        <div class="analytics-card">
+          <h3>📥 Applications by Portal</h3>
+          <div class="table-container" style="border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Portal</th>
+                  <th>Applications</th>
+                  <th>Visual Share</th>
+                </tr>
+              </thead>
+              <tbody id="portalBreakdownBody">
+                <!-- Dynamically filled -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Status Breakdown Card -->
+        <div class="analytics-card">
+          <h3>🏷️ Applications by Status</h3>
+          <div class="table-container" style="border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Applications</th>
+                  <th>Visual Share</th>
+                </tr>
+              </thead>
+              <tbody id="statusBreakdownBody">
+                <!-- Dynamically filled -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Role Breakdown Card -->
+        <div class="analytics-card" style="grid-column: span 1;">
+          <h3>💼 Top Roles Applied</h3>
+          <div class="table-container" style="border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Applications</th>
+                  <th>Visual Share</th>
+                </tr>
+              </thead>
+              <tbody id="roleBreakdownBody">
+                <!-- Dynamically filled -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -1596,6 +1758,112 @@ app.get("/dashboard", async (c) => {
         row.onclick = () => openDetailsModal(app);
         tbody.appendChild(row);
       });
+
+      // ----------------------------------------------------
+      // Compute & Render Analytics
+      // ----------------------------------------------------
+      
+      // 1. Portal Analytics
+      const portalCounts = {};
+      filtered.forEach(app => {
+        const portal = getPortalName(app.applyLink);
+        portalCounts[portal] = (portalCounts[portal] || 0) + 1;
+      });
+      
+      const sortedPortals = Object.entries(portalCounts).sort((a, b) => b[1] - a[1]);
+      const maxPortalCount = sortedPortals.length ? sortedPortals[0][1] : 1;
+      
+      const portalBody = document.getElementById("portalBreakdownBody");
+      portalBody.innerHTML = "";
+      if (sortedPortals.length === 0) {
+        portalBody.innerHTML = '<tr><td colspan="3" class="no-data">No data available.</td></tr>';
+      } else {
+        sortedPortals.forEach(([portal, count]) => {
+          const pct = Math.round((count / maxPortalCount) * 100);
+          const sharePct = Math.round((count / filtered.length) * 100);
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td style="font-weight:600; color:#58a6ff;">\${portal}</td>
+            <td style="font-weight:700; color:#fff;">\${count}</td>
+            <td style="width: 50%;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" style="width: \${pct}%;"></div>
+                </div>
+                <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
+              </div>
+            </td>
+          `;
+          portalBody.appendChild(tr);
+        });
+      }
+
+      // 2. Status Analytics
+      const statusCounts = { "Applied": 0, "Interviewing": 0, "Offered": 0, "Rejected": 0 };
+      filtered.forEach(app => {
+        const status = app.status || "Applied";
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+      });
+      
+      const sortedStatuses = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]);
+      const maxStatusCount = Math.max(...Object.values(statusCounts), 1);
+      
+      const statusBody = document.getElementById("statusBreakdownBody");
+      statusBody.innerHTML = "";
+      sortedStatuses.forEach(([status, count]) => {
+        const pct = Math.round((count / maxStatusCount) * 100);
+        const statusClass = status.toLowerCase();
+        const sharePct = filtered.length ? Math.round((count / filtered.length) * 100) : 0;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><span class="status-badge \${statusClass}">\${status}</span></td>
+          <td style="font-weight:700; color:#fff;">\${count}</td>
+          <td style="width: 50%;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill status-\${statusClass}" style="width: \${pct}%;"></div>
+              </div>
+              <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
+            </div>
+          </td>
+        `;
+        statusBody.appendChild(tr);
+      });
+
+      // 3. Role Analytics
+      const roleCounts = {};
+      filtered.forEach(app => {
+        const role = app.jobTitle || "N/A";
+        roleCounts[role] = (roleCounts[role] || 0) + 1;
+      });
+      
+      const sortedRoles = Object.entries(roleCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const maxRoleCount = sortedRoles.length ? sortedRoles[0][1] : 1;
+      
+      const roleBody = document.getElementById("roleBreakdownBody");
+      roleBody.innerHTML = "";
+      if (sortedRoles.length === 0) {
+        roleBody.innerHTML = '<tr><td colspan="3" class="no-data">No data available.</td></tr>';
+      } else {
+        sortedRoles.forEach(([role, count]) => {
+          const pct = Math.round((count / maxRoleCount) * 100);
+          const sharePct = Math.round((count / filtered.length) * 100);
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td style="font-weight:600; color:#c9d1d9;">\${role}</td>
+            <td style="font-weight:700; color:#fff;">\${count}</td>
+            <td style="width: 50%;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" style="width: \${pct}%;"></div>
+                </div>
+                <span style="font-size:11px; color:var(--text-muted); min-width:30px;">\${sharePct}%</span>
+              </div>
+            </td>
+          `;
+          roleBody.appendChild(tr);
+        });
+      }
     }
 
     function openDetailsModalDirect(appId) {
@@ -1695,6 +1963,17 @@ app.get("/dashboard", async (c) => {
         
         this.classList.add("active");
         document.getElementById(this.dataset.target).classList.add("active");
+      };
+    });
+
+    // Dashboard Tabs logic
+    document.querySelectorAll(".dash-tab-btn").forEach(btn => {
+      btn.onclick = function() {
+        document.querySelectorAll(".dash-tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".dash-tab-content").forEach(c => c.style.display = "none");
+        
+        this.classList.add("active");
+        document.getElementById(this.dataset.tab).style.display = "block";
       };
     });
 
