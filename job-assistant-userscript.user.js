@@ -2309,6 +2309,7 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             <div id="atsLine" style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);font-weight:bold;color:#a78bfa;">
                 📊 ATS Score: ${ats == null ? "--" : ats + "%"}
             </div>`;
+        updateApplyButtonState();
     }
 
     function updateAtsDisplay(score) {
@@ -2358,18 +2359,42 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         const k = getJobStorageKey(info); if (!k) return false;
         try { return sessionStorage.getItem(k) === "1"; } catch (e) { return false; }
     }
+    function updateApplyButtonState() {
+        const btn = STATE.shadowRoot?.getElementById("applyJobBtn");
+        if (!btn) return;
+        const logged = isJobLoggedInSession(STATE.currentJob) || STATE.currentJobAlreadyLogged;
+        if (logged) {
+            btn.textContent = "✅ Applied";
+            btn.style.background = "linear-gradient(135deg, #1b4332, #2d6a4f)";
+            btn.style.color = "#d8f3dc";
+            btn.style.borderColor = "#40916c";
+        } else {
+            btn.textContent = "🚀 Apply Job";
+            btn.style.background = "";
+            btn.style.color = "";
+            btn.style.borderColor = "";
+        }
+    }
+
     function markJobLoggedInSession(info) {
         const k = getJobStorageKey(info); if (!k) return;
         try { sessionStorage.setItem(k, "1"); } catch (e) { }
         STATE.currentLoggedLookupKey = k; STATE.currentJobAlreadyLogged = true;
+        updateApplyButtonState();
     }
-    function updateLoggedIndicator(v) { /* no log button in this layout */ }
+    function updateLoggedIndicator(v) { updateApplyButtonState(); }
 
     function syncLoggedStateForCurrentJob(info, force) {
         const k = getJobStorageKey(info);
         if (!k) return;
-        if (isJobLoggedInSession(info)) { STATE.currentLoggedLookupKey = k; STATE.currentJobAlreadyLogged = true; return; }
+        if (isJobLoggedInSession(info)) { 
+            STATE.currentLoggedLookupKey = k; 
+            STATE.currentJobAlreadyLogged = true; 
+            updateApplyButtonState();
+            return; 
+        }
         STATE.currentJobAlreadyLogged = false;
+        updateApplyButtonState();
         if (!force && STATE.currentLoggedLookupKey === k) return;
         if (STATE.loggedLookupPendingKey === k) return;
         STATE.loggedLookupPendingKey = k;
@@ -2379,10 +2404,18 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             onload: function (r) {
                 STATE.loggedLookupPendingKey = ""; STATE.currentLoggedLookupKey = k;
                 const d = parseJsonSafe(r.responseText || "");
-                if (d && (d.exists || d.duplicate)) markJobLoggedInSession(info);
-                else { STATE.currentJobAlreadyLogged = false; }
+                if (d && (d.exists || d.duplicate)) {
+                    markJobLoggedInSession(info);
+                } else { 
+                    STATE.currentJobAlreadyLogged = false; 
+                    updateApplyButtonState();
+                }
             },
-            onerror: function () { STATE.loggedLookupPendingKey = ""; STATE.currentLoggedLookupKey = k; }
+            onerror: function () { 
+                STATE.loggedLookupPendingKey = ""; 
+                STATE.currentLoggedLookupKey = k; 
+                updateApplyButtonState();
+            }
         });
     }
 
@@ -2983,13 +3016,11 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
         shadow.getElementById("applyJobBtn").onclick = () => {
             const btn = shadow.getElementById("applyJobBtn");
-            const origText = btn.textContent;
             btn.disabled = true;
             btn.textContent = "⏳ Saving...";
             handleLoggedAction({ applyStatus: "Applied" }, () => {
                 btn.disabled = false;
-                btn.textContent = "✅ Applied!";
-                setTimeout(() => { btn.textContent = origText; }, 2000);
+                markJobLoggedInSession(STATE.currentJob);
             });
         };
         shadow.getElementById("dashBtn").onclick = () => {
