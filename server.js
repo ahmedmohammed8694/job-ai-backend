@@ -1096,6 +1096,10 @@ app.get("/dashboard", async (c) => {
         <span style="font-size: 12px; color: var(--text-muted);">To:</span>
         <input type="date" id="endDateFilter" style="background:transparent; border:none; color:var(--text-main); font-size:12.5px; outline:none; cursor:pointer;">
       </div>
+      
+      <button id="resetFiltersBtn" style="display:flex; align-items:center; gap:6px; padding:10px 16px; background:#21262d; border:1px solid var(--card-border); color:#c9d1d9; border-radius:8px; font-weight:600; cursor:pointer; font-size:13px; transition:background 0.2s, color 0.2s;" onmouseover="this.style.background='#30363d'; this.style.color='#fff';" onmouseout="this.style.background='#21262d'; this.style.color='#c9d1d9';" onclick="resetFilters()">
+        🔄 Reset Filters
+      </button>
     </div>
 
     <!-- Table -->
@@ -1344,6 +1348,17 @@ app.get("/dashboard", async (c) => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+
+    function resetFilters() {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("roleFilter").value = "all";
+      document.getElementById("companyFilter").value = "all";
+      document.getElementById("statusFilter").value = "all";
+      document.getElementById("salaryFilterInput").value = "";
+      document.getElementById("startDateFilter").value = "";
+      document.getElementById("endDateFilter").value = "";
+      renderDashboard();
     }
 
     function copyDirect(appId, field) {
