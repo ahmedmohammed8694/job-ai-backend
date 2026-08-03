@@ -1355,9 +1355,17 @@ app.get("/dashboard", async (c) => {
       const csvRows = [headers.map(h => '"' + h.replace(/"/g, '""') + '"').join(",")];
 
       filtered.forEach(app => {
-        const dateStr = app.createdAt ? new Date(app.createdAt).toLocaleDateString("en-IN", {
-          day: "numeric", month: "short", year: "numeric"
-        }) : "N/A";
+        let dateStr = "N/A";
+        if (app.createdAt) {
+          try {
+            const parsed = new Date(app.createdAt);
+            if (!isNaN(parsed.getTime())) {
+              dateStr = parsed.toLocaleDateString("en-IN", {
+                day: "numeric", month: "short", year: "numeric"
+              });
+            }
+          } catch (e) {}
+        }
         
         const row = [
           app.id || "",
@@ -1485,8 +1493,11 @@ app.get("/dashboard", async (c) => {
         }
 
         // 6. Date Range Filter
-        if (app.createdAt) {
+        if (startDateVal || endDateVal) {
+          if (!app.createdAt) return false;
           const appDate = new Date(app.createdAt);
+          if (isNaN(appDate.getTime())) return false;
+          
           if (startDateVal) {
             const start = new Date(startDateVal);
             start.setHours(0,0,0,0);
@@ -1519,9 +1530,19 @@ app.get("/dashboard", async (c) => {
         const row = document.createElement("tr");
         row.className = "app-row";
         
-        const date = new Date(app.createdAt).toLocaleDateString("en-IN", {
-          day: "numeric", month: "short", year: "numeric"
-        });
+        let date = "N/A";
+        if (app.createdAt) {
+          try {
+            const parsedDate = new Date(app.createdAt);
+            if (!isNaN(parsedDate.getTime())) {
+              date = parsedDate.toLocaleDateString("en-IN", {
+                day: "numeric", month: "short", year: "numeric"
+              });
+            }
+          } catch (e) {
+            console.error("Error parsing row date:", e);
+          }
+        }
 
         const statusClass = (app.status || "Applied").toLowerCase();
 
