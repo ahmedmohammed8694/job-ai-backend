@@ -493,14 +493,15 @@ app.delete("/api/keys/delete/:id", async (c) => {
 app.get("/dashboard", async (c) => {
   const email = c.req.query("email") || "ahmed.mohammed8694@gmail.com";
   
-  // Fetch all applications for this email
-  const apps = await executeQuery(
-    c,
-    `SELECT * FROM applications WHERE userEmail = ? ORDER BY createdAt DESC`,
-    [email]
-  );
+  try {
+    // Fetch all applications for this email
+    const apps = await executeQuery(
+      c,
+      `SELECT * FROM applications WHERE userEmail = ? ORDER BY createdAt DESC`,
+      [email]
+    );
 
-  const html = `<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1280,7 +1281,34 @@ app.get("/dashboard", async (c) => {
 </body>
 </html>`;
 
-  return c.html(html);
+    return c.html(html);
+  } catch (err) {
+    return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Database Error</title>
+  <style>
+    body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 30px; max-width: 500px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+    h2 { color: #f85149; margin-top: 0; }
+    p { color: #8b949e; line-height: 1.6; }
+    code { background: #21262d; padding: 3px 6px; border-radius: 4px; color: #ff7b72; font-family: monospace; font-size: 13px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>⚠️ Database Query Error</h2>
+    <p>We encountered an error querying the database:</p>
+    <p><code>\${err.message || err}</code></p>
+    <p style="margin-top: 20px;">Please ensure you have initialized your database schema and migrated any updates by running the migration commands in your terminal:</p>
+    <div style="background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; color: #79c0ff; text-align: left; overflow-x: auto;">
+      npx wrangler d1 execute job-ai-db --file=./update_schema.sql --remote
+    </div>
+  </div>
+</body>
+</html>`);
+  }
 });
 
 // Local Node.js server runner (when running npm run dev)
