@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS applications (
   resumeScore REAL,
   resumeUrl TEXT,
   status TEXT DEFAULT 'Applied',
+  salary TEXT,
+  email TEXT,
+  phone TEXT,
+  jdText TEXT,
+  coverLetter TEXT DEFAULT 'No generated',
+  whatsAppMessage TEXT DEFAULT 'No generated',
+  emailMessage TEXT DEFAULT 'No generated',
+  atsScore INTEGER,
   createdAt TEXT DEFAULT (datetime('now'))
 );
 

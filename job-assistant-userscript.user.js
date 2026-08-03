@@ -376,6 +376,13 @@ Product Adoption & Engagement, Windows Troubleshooting
         } catch(e) { return "auto"; }
     }
 
+    function getSelectedProviderLabel() {
+        const pref = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
+        const pDef = AI_PROVIDERS.find(p => p.id === pref);
+        return pDef ? pDef.label : "AI";
+    }
+
+
     function callOpenAiApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "gpt-4o-mini") {
         const key = apiKey || getOpenAiApiKey();
         if (!key) {
@@ -457,7 +464,7 @@ Product Adoption & Engagement, Windows Troubleshooting
         // Build ordered list of providers: user-selected first, then rest
         const ALL_ORDER = ["gemini", "openai", "grok", "openrouter", "claude"];
         const userPick  = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
-        const PROVIDER_ORDER = [userPick, ...ALL_ORDER.filter(p => p !== userPick)];
+        const PROVIDER_ORDER = [userPick];
 
         // Try a specific provider's vault keys in sequence
         async function tryProviderVault(providerId, remainingKeys, onProviderFail) {
@@ -491,6 +498,8 @@ Product Adoption & Engagement, Windows Troubleshooting
                 callOpenRouterApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "meta-llama/llama-3.3-70b-instruct:free");
             } else if (providerId === "claude") {
                 callClaudeApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "claude-haiku-3-5");
+            } else if (providerId === "omniroute") {
+                callOmniRouteApi(prompt, keyEntry.key, maxTokens, onSuccess, onKeyFail, model || "auto");
             } else {
                 onProviderFail("Unknown provider: " + providerId);
             }
@@ -499,7 +508,7 @@ Product Adoption & Engagement, Windows Troubleshooting
         // Try providers in order
         async function tryNextProvider(providerIdx) {
             if (providerIdx >= PROVIDER_ORDER.length) {
-                onError("All AI providers exhausted. Please add more API keys in the 🤖 AI Provider Vault.");
+                onError(`All API keys for your active provider (${userPick.toUpperCase()}) are exhausted or rate-limited. Please add more API keys to the vault.`);
                 return;
             }
             const pid = PROVIDER_ORDER[providerIdx];
@@ -529,12 +538,13 @@ Product Adoption & Engagement, Windows Troubleshooting
         const grokKeys      = mergeKeys("grok", legacyGrok);
         const openrouterKeys = getLocalKeysForProvider("openrouter").filter(k => k.active !== false);
         const claudeKeys    = getLocalKeysForProvider("claude").filter(k => k.active !== false);
+        const omnirouteKeys  = getLocalKeysForProvider("omniroute").filter(k => k.active !== false);
 
-        const allProviderKeys = { gemini: geminiKeys, openai: openaiKeys, grok: grokKeys, openrouter: openrouterKeys, claude: claudeKeys };
+        const allProviderKeys = { gemini: geminiKeys, openai: openaiKeys, grok: grokKeys, openrouter: openrouterKeys, claude: claudeKeys, omniroute: omnirouteKeys };
 
         async function tryNextProviderMerged(providerIdx) {
             if (providerIdx >= PROVIDER_ORDER.length) {
-                onError("All AI providers exhausted. Please add more API keys in the 🤖 AI Provider Vault.");
+                onError(`All API keys for your active provider (${userPick.toUpperCase()}) are exhausted or rate-limited. Please add more API keys to the vault.`);
                 return;
             }
             const pid = PROVIDER_ORDER[providerIdx];
@@ -545,6 +555,7 @@ Product Adoption & Engagement, Windows Troubleshooting
             }
             tryProviderVault(pid, keys, () => tryNextProviderMerged(providerIdx + 1));
         }
+
 
         tryNextProviderMerged(0);
     }
@@ -598,6 +609,40 @@ Product Adoption & Engagement, Windows Troubleshooting
         });
     }
 
+    function callOmniRouteApi(prompt, apiKey, maxTokens, onSuccess, onError, modelName = "auto") {
+        const key = apiKey || "";
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "http://localhost:20128/v1/chat/completions",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": key ? `Bearer ${key}` : ""
+            },
+            anonymous: false,
+            data: JSON.stringify({
+                model: modelName || "auto",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: maxTokens || 4000,
+                temperature: 0.7
+            }),
+            onload: function (response) {
+                const data = parseJsonSafe(response.responseText || "");
+                const text = data && data.choices && data.choices[0] && data.choices[0].message
+                    ? String(data.choices[0].message.content || "").trim() : "";
+
+                if (text) {
+                    onSuccess(text, modelName || "auto");
+                } else {
+                    onError(response.responseText || `OmniRoute HTTP Status ${response.status}`, response.status);
+                }
+            },
+            onerror: function (err) {
+                onError("Network error calling OmniRoute API. Make sure OmniRoute is running locally on http://localhost:20128");
+            }
+        });
+    }
+
+
     function getGeminiApiKey() {
         try {
             const gmKey = typeof GM_getValue === "function" ? GM_getValue("geminiApiKey", "") : "";
@@ -619,9 +664,13 @@ Product Adoption & Engagement, Windows Troubleshooting
 
     // Get the active key email for a given provider
     function getActiveKeyEmail(pid) {
-        const keys = getLocalKeysForProvider(pid).filter(k => k.active !== false);
-        if (!keys.length) return "No key saved";
-        return keys[0].accountEmail || "(no email saved)";
+        const allKeys = getLocalKeysForProvider(pid);
+        if (!allKeys.length) return "No key saved";
+        const active = allKeys.filter(k => k.active !== false);
+        if (!active.length) {
+            return `${allKeys[0].accountEmail || "Key"} (Deactivated)`;
+        }
+        return active[0].accountEmail || "(no email saved)";
     }
 
     // ── AI PROVIDER CONFIG ────────────────────────────────────────────────────
@@ -910,6 +959,9 @@ Product Adoption & Engagement, Windows Troubleshooting
                 btn.onclick = () => {
                     const idx = parseInt(btn.dataset.kidx);
                     keys[idx].active = keys[idx].active === false ? true : false;
+                    if (keys[idx].active === true) {
+                        keys[idx].failCount = 0;
+                    }
                     setLocalKeysForProvider(providerId, keys);
                     renderModal();
                 };
@@ -1126,12 +1178,9 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
         const freshTitle = extractJobRole() || info.title || "N/A";
         const freshCompany = extractCompanyNameFromPage() || info.company || "N/A";
 
-        console.log("[Job Assistant][Gemini] Generating", type, "for:", freshTitle, "@", freshCompany, "| JD length:", freshJd.length);
-        if (freshJd.length < 100) {
-            console.warn("[Job Assistant][Gemini] JD extraction looks too short/empty — the AI message may not be well-tailored for this job. Try scrolling the JD into view before clicking.");
-        }
-
         const providerPref = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
+        console.log(`[Job Assistant][${providerPref.toUpperCase()}] Generating`, type, "for:", freshTitle, "@", freshCompany, "| JD length:", freshJd.length);
+
         const hasKeys = getLocalKeysForProvider(providerPref).some(k => k.active !== false) ||
                         (providerPref === "gemini" && getGeminiApiKey()) ||
                         (providerPref === "openai" && getOpenAiApiKey()) ||
@@ -1165,9 +1214,17 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
 
         callMultiProviderAiApi(prompt, 1200, (text, modelUsed) => {
             console.log("[Job Assistant][Multi-AI] Generated fresh", type, "message via", modelUsed, "(", text.length, "chars ) for", freshTitle);
+            if (!STATE.currentGenerated) {
+                STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+            }
+            STATE.currentGenerated[type] = text;
             onDone(text, false);
         }, (err) => {
             console.error("[Job Assistant] Multi-AI call failed, falling back to static template.", err);
+            if (!STATE.currentGenerated) {
+                STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+            }
+            STATE.currentGenerated[type] = staticFallback;
             onDone(staticFallback, true);
         });
     }
@@ -1324,21 +1381,27 @@ Return ONLY the clean body text without markdown code backticks (\`\`\`), withou
         modal.querySelector("#aiRefineBtn").onclick = () => {
             const instruction = modal.querySelector("#aiRefineInput").value.trim();
             if (!instruction) {
-                alert("⚠️ Please enter a command/instruction for Gemini (e.g. 'Make it shorter and emphasize sales metrics').");
+                alert("⚠️ Please enter a command/instruction for refining (e.g. 'Make it shorter and emphasize sales metrics').");
                 return;
             }
 
-            const apiKey = getGeminiApiKey();
-            if (!apiKey) {
-                alert("🔑 Please set your Gemini API Key first!");
-                showGeminiKeyModal();
+            const providerPref = (gmGet("selectedAiProvider", "gemini") || "gemini").toLowerCase();
+            const hasKeys = getLocalKeysForProvider(providerPref).some(k => k.active !== false) ||
+                            (providerPref === "gemini" && getGeminiApiKey()) ||
+                            (providerPref === "openai" && getOpenAiApiKey()) ||
+                            (providerPref === "grok" && getGrokApiKey());
+
+            if (!hasKeys) {
+                alert(`🔑 Please configure an API key for your selected provider (${providerPref.toUpperCase()}) in the 🤖 AI Provider Vault.`);
+                showAiProviderModal();
                 return;
             }
 
             const refineBtn = modal.querySelector("#aiRefineBtn");
             const origBtnText = refineBtn.textContent;
             refineBtn.disabled = true;
-            refineBtn.textContent = "⏳ Gemini is refining...";
+            const providerName = getSelectedProviderLabel();
+            refineBtn.textContent = `⏳ ${providerName} is refining...`;
 
             const currentText = textarea.value.trim();
             const promptForRefiner = `You are an expert AI prompt engineer.
@@ -1355,22 +1418,23 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 2. YOU MUST KEEP the dynamic placeholders intact so they can be replaced at runtime: {RESUME_TEXT}, {RESUME_URL}, {JOB_TITLE}, {COMPANY_NAME}, {JOB_DESCRIPTION}, {STYLE_INSTRUCTIONS}.
 3. Return ONLY the new prompt template text without markdown code blocks, preamble, or commentary.`;
 
-            callGeminiApi(promptForRefiner, apiKey, 8192,
+            callMultiProviderAiApi(promptForRefiner, 8192,
                 (newPromptText, usedModel) => {
                     refineBtn.disabled = false;
                     refineBtn.textContent = origBtnText;
                     textarea.value = newPromptText;
                     modal.querySelector("#aiRefineInput").value = "";
-                    alert(`✨ New ${activeTab === "whatsapp" ? "WhatsApp" : (activeTab === "cover" ? "Cover Letter" : "Email")} prompt generated by Gemini (${usedModel})! Review and click 'Save Active Prompt'.`);
+                    alert(`✨ New ${activeTab === "whatsapp" ? "WhatsApp" : (activeTab === "cover" ? "Cover Letter" : "Email")} prompt template generated by ${providerName} (${usedModel})! Review and click 'Save Active Prompt'.`);
                 },
-                (errText, status) => {
+                (errText) => {
                     refineBtn.disabled = false;
                     refineBtn.textContent = origBtnText;
-                    console.error("[Job Assistant][Gemini Refiner Error]", errText);
-                    alert("❌ Failed to generate refined prompt.\n\nError details from Gemini: " + (errText || "Unknown error"));
+                    console.error(`[Job Assistant][${providerName} Refiner Error]`, errText);
+                    alert(`❌ Failed to generate refined prompt template.\n\nError details: ` + (errText || "Unknown error"));
                 }
             );
         };
+
     }
 
     function showEmailPreviewModal(job, initialText) {
@@ -1431,12 +1495,24 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
         document.body.appendChild(modal);
 
+        if (!STATE.currentGenerated) {
+            STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+        }
+        STATE.currentGenerated.email = initialText;
+
+        const emailTextarea = modal.querySelector("#emailContentTextarea");
+        emailTextarea.oninput = () => {
+            if (!STATE.currentGenerated) STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+            STATE.currentGenerated.email = emailTextarea.value.trim();
+        };
+
         modal.querySelector("#closeEmailPreviewModal").onclick = () => modal.remove();
 
         modal.querySelector("#sendEmailNowBtn").onclick = () => {
             const recipient = modal.querySelector("#emailToInput").value.trim();
             const subject = modal.querySelector("#emailSubjectInput").value.trim();
-            const bodyText = modal.querySelector("#emailContentTextarea").value.trim();
+            const bodyText = emailTextarea.value.trim();
+            STATE.currentGenerated.email = bodyText;
 
             const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
 
@@ -1447,7 +1523,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         };
 
         modal.querySelector("#copyEmailTextBtn").onclick = () => {
-            const bodyText = modal.querySelector("#emailContentTextarea").value.trim();
+            const bodyText = emailTextarea.value.trim();
+            STATE.currentGenerated.email = bodyText;
             if (typeof GM_setClipboard === "function") {
                 GM_setClipboard(bodyText);
             }
@@ -1461,7 +1538,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
             regenBtn.disabled = true;
             regenBtn.textContent = "⏳ Regenerating...";
-            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+            const currentProviderName = getSelectedProviderLabel();
+            statusTag.textContent = `⏳ ${currentProviderName} is writing a new version...`;
 
             generateAiMessage(job, "email", (newText, usedFallback) => {
                 regenBtn.disabled = false;
@@ -1527,11 +1605,23 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
         document.body.appendChild(modal);
 
+        if (!STATE.currentGenerated) {
+            STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+        }
+        STATE.currentGenerated.whatsapp = initialText;
+
+        const waTextarea = modal.querySelector("#waContentTextarea");
+        waTextarea.oninput = () => {
+            if (!STATE.currentGenerated) STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+            STATE.currentGenerated.whatsapp = waTextarea.value.trim();
+        };
+
         modal.querySelector("#closeWaPreviewModal").onclick = () => modal.remove();
 
         modal.querySelector("#sendWaNowBtn").onclick = () => {
             const rawPhone = modal.querySelector("#waPhoneInput").value.trim();
-            const bodyText = modal.querySelector("#waContentTextarea").value.trim();
+            const bodyText = waTextarea.value.trim();
+            STATE.currentGenerated.whatsapp = bodyText;
             const cp = rawPhone.replace(/\D/g, "");
             const waLink = cp ? `https://wa.me/${cp}?text=${encodeURIComponent(bodyText)}` : `https://wa.me/?text=${encodeURIComponent(bodyText)}`;
 
@@ -1542,7 +1632,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         };
 
         modal.querySelector("#copyWaTextBtn").onclick = () => {
-            const bodyText = modal.querySelector("#waContentTextarea").value.trim();
+            const bodyText = waTextarea.value.trim();
+            STATE.currentGenerated.whatsapp = bodyText;
             if (typeof GM_setClipboard === "function") {
                 GM_setClipboard(bodyText);
             }
@@ -1556,7 +1647,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
             regenBtn.disabled = true;
             regenBtn.textContent = "⏳ Regenerating...";
-            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+            const currentProviderName = getSelectedProviderLabel();
+            statusTag.textContent = `⏳ ${currentProviderName} is writing a new version...`;
 
             generateAiMessage(job, "whatsapp", (newText, usedFallback) => {
                 regenBtn.disabled = false;
@@ -1610,10 +1702,22 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
         document.body.appendChild(modal);
 
+        if (!STATE.currentGenerated) {
+            STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+        }
+        STATE.currentGenerated.cover = initialText;
+
+        const coverTextarea = modal.querySelector("#coverContentTextarea");
+        coverTextarea.oninput = () => {
+            if (!STATE.currentGenerated) STATE.currentGenerated = { email: "No generated", whatsapp: "No generated", cover: "No generated" };
+            STATE.currentGenerated.cover = coverTextarea.value.trim();
+        };
+
         modal.querySelector("#closeCoverPreviewModal").onclick = () => modal.remove();
 
         modal.querySelector("#copyCoverNowBtn").onclick = () => {
-            const bodyText = modal.querySelector("#coverContentTextarea").value.trim();
+            const bodyText = coverTextarea.value.trim();
+            STATE.currentGenerated.cover = bodyText;
             if (typeof GM_setClipboard === "function") {
                 GM_setClipboard(bodyText);
             }
@@ -1630,7 +1734,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
 
             regenBtn.disabled = true;
             regenBtn.textContent = "⏳ Regenerating...";
-            statusTag.textContent = "⏳ Gemini AI is writing a new version...";
+            const currentProviderName = getSelectedProviderLabel();
+            statusTag.textContent = `⏳ ${currentProviderName} is writing a new version...`;
 
             generateAiMessage(job, "cover", (newText, usedFallback) => {
                 regenBtn.disabled = false;
@@ -1825,10 +1930,13 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
     function isNaukriPortal() { return location.hostname.includes("naukri.com"); }
 
     function getLinkedInDetailsContainer() {
-        return document.querySelector(
-            ".jobs-search__job-details, .scaffold-layout__detail, .jobs-details__main-content, .job-view-layout, main"
+        const detailPane = document.querySelector(
+            ".jobs-search__job-details, .scaffold-layout__detail, .jobs-details__main-content, .job-view-layout, [class*='job-details']"
         );
+        if (detailPane) return detailPane;
+        return document.querySelector("main") || document.body;
     }
+
 
     function getCleanBodyClone() {
         if (!document.body) return null;
@@ -1944,14 +2052,27 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         if (isLinkedInPortal()) {
             const container = getLinkedInDetailsContainer();
             const doc = container || document;
-            const h = doc.querySelector(".job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, h1, h2, [class*='job-title']");
-            if (h && h.innerText.trim()) {
-                return cleanDisplayText(h.innerText).replace(/^(Hiring for|Urgent hiring for)\s+/i, "");
+            const selectors = [
+                ".job-details-jobs-unified-top-card__job-title",
+                ".jobs-unified-top-card__job-title",
+                "h1",
+                "[class*='job-title']",
+                "h2"
+            ];
+            for (const sel of selectors) {
+                const el = doc.querySelector(sel);
+                if (el) {
+                    const text = cleanDisplayText(el.innerText || el.textContent);
+                    if (text && text.length > 2 && !/helpful\?/i.test(text) && !/feedback/i.test(text) && !/jobs for you/i.test(text)) {
+                        return text.replace(/^(Hiring for|Urgent hiring for)\s+/i, "");
+                    }
+                }
             }
         }
         if (isNaukriPortal()) { const h = document.querySelector(".jd-header-title,.styles_jhc__title__6S6t4,h1"); return cleanDisplayText(h?.innerText || "").replace(/^(Hiring for|Urgent hiring for)\s+/i, ""); }
         return document.title.split("|")[0].split("-")[0].trim();
     }
+
 
     function extractCompanyNameFromPage() {
         const jc = extractFromJsonLd('company');
@@ -2002,6 +2123,8 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         if (isLinkedInPortal()) {
             const container = getLinkedInDetailsContainer();
             const doc = container || document;
+            
+            // 1. Specific bullet classes
             for (const sel of [
                 ".job-details-jobs-unified-top-card__bullet",
                 ".jobs-unified-top-card__bullet",
@@ -2012,15 +2135,31 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
                     if (isLikelyLocationText(t)) return t;
                 }
             }
-            // Fallback: search primary description container for location
-            const pd = doc.querySelector(".job-details-jobs-unified-top-card__primary-description, .jobs-unified-top-card__primary-description");
+
+            // 2. Scan direct text child spans/divs/anchors in the top card header to find any match
+            const headerArea = doc.querySelector(".job-details-jobs-unified-top-card, .jobs-unified-top-card, .topcard__content-left, [class*='top-card']");
+            const searchRoot = headerArea || doc;
+            const elements = searchRoot.querySelectorAll("span, div, li, a");
+            const compName = extractCompanyNameFromPage();
+            for (const el of elements) {
+                const t = (el.innerText || "").trim();
+                if (t && t.length < 100 && isLikelyLocationText(t)) {
+                    if (t.toLowerCase() !== compName.toLowerCase()) {
+                        return t;
+                    }
+                }
+            }
+
+            // 3. Fallback: split primary description container text
+            const pd = doc.querySelector(".job-details-jobs-unified-top-card__primary-description, .jobs-unified-top-card__primary-description, [class*='primary-description']");
             if (pd) {
-                const parts = pd.innerText.split("·").map(p => p.trim());
+                const parts = pd.innerText.split(/·|•|\n|\|/).map(p => p.trim());
                 for (const p of parts) {
                     if (isLikelyLocationText(p)) return p;
                 }
             }
         }
+
         if (isNaukriPortal()) {
             for (const sel of [".styles_jhc__location", ".styles_jhcLoc__container span", "[class*='location']"]) {
                 for (const n of document.querySelectorAll(sel)) { const t = (n.innerText || "").trim(); if (isLikelyLocationText(t)) return t; }
@@ -2029,22 +2168,43 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         return "N/A";
     }
 
+    function extractSalaryFromJd(jdText) {
+        if (!jdText) return "";
+        const patterns = [
+            /(?:salary|stipend|compensation|remuneration|pay)\s*[:\-]?\s*(?:Rs\.?|INR|₹|\$|£|€)?\s*\d+[\d,.\s]*(?:-|to)\s*(?:Rs\.?|INR|₹|\$|£|€)?\s*\d+[\d,.\s]*(?:\s*LPA|\s*PA|\s*PM|\s*month|\s*annum|\s*year)?/i,
+            /(?:Rs\.?|INR|₹|\$|£|€)\s*\d+[\d,.\s]*(?:-|to)\s*(?:Rs\.?|INR|₹|\$|£|€)?\s*\d+[\d,.\s]*(?:\s*LPA|\s*PA|\s*PM|\s*month|\s*annum|\s*year)/i,
+            /\b\d+\s*(?:-|to)\s*\d+\s*LPA\b/i,
+            /\b\d+\s*-\s*\d+\s*k\s*(?:USD|CAD|GBP|EUR)?\s*\/year\b/i
+        ];
+        for (const pat of patterns) {
+            const m = jdText.match(pat);
+            if (m) return m[0].trim();
+        }
+        return "";
+    }
+
     function extractSalaryFromHeader() {
         const js = extractFromJsonLd('salary'); if (js) return js;
+        let salText = "";
         if (isNaukriPortal()) {
             for (const sel of [".styles_jhc__salary", ".salary", "[title='Salary'] + span", ".salaryText"]) {
-                const el = document.querySelector(sel); if (el && el.innerText.trim()) return el.innerText.trim();
+                const el = document.querySelector(sel); if (el && el.innerText.trim()) { salText = el.innerText.trim(); break; }
             }
         }
-        if (isLinkedInPortal()) {
+        if (!salText && isLinkedInPortal()) {
             const container = getLinkedInDetailsContainer();
             const doc = container || document;
             for (const b of doc.querySelectorAll(".job-details-jobs-unified-top-card__job-insight, .job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__job-insight, .jobs-unified-top-card__bullet")) {
                 const t = b.innerText;
-                if (t.includes("₹") || t.includes("$") || t.includes("£") || t.toLowerCase().includes("monthly") || t.toLowerCase().includes("yearly")) return t.trim();
+                if (t.includes("₹") || t.includes("$") || t.includes("£") || t.toLowerCase().includes("monthly") || t.toLowerCase().includes("yearly")) { salText = t.trim(); break; }
             }
         }
-        return "Not Disclosed";
+        if (!salText || salText === "Not Disclosed") {
+            const jd = extractJobDescriptionText() || STATE.lastObservedJdText || "";
+            const jdSal = extractSalaryFromJd(jd);
+            if (jdSal) return jdSal;
+        }
+        return salText || "Not Disclosed";
     }
 
     function extractContextualContact(text, type) {
@@ -2064,11 +2224,26 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
             const cands = matches.filter(m => { const d = m.replace(/\D/g, ''); return d.length >= 10 && d.length <= 13 && !d.startsWith('2024') && !d.startsWith('2025'); });
             if (!cands.length) return "N/A";
             let best = "N/A", bestS = -1;
-            cands.forEach(ph => { const pos = src.indexOf(ph); const ctx = norm.slice(Math.max(0, pos - 60), pos + ph.length + 60); let s = 0; hrKw.forEach(kw => { if (ctx.includes(kw)) s++; }); if (s > bestS) { bestS = s; best = ph; } });
-            return bestS > 0 ? best : "N/A";
+            cands.forEach(ph => {
+                const pos = src.indexOf(ph);
+                const ctx = norm.slice(Math.max(0, pos - 60), pos + ph.length + 60);
+                let s = 0;
+                hrKw.forEach(kw => { if (ctx.includes(kw)) s++; });
+                if (ph.startsWith("+") || ph.startsWith("00")) s += 1;
+                if (s > bestS) {
+                    bestS = s;
+                    best = ph;
+                }
+            });
+            if (best === "N/A" && cands.length > 0) {
+                const plusCand = cands.find(c => c.startsWith("+") || c.startsWith("00"));
+                if (plusCand) return plusCand;
+            }
+            return bestS >= 0 ? best : "N/A";
         }
         return "N/A";
     }
+
 
     function extractExperienceFromPage(jd) {
         if (!jd) return "N/A";
@@ -2333,12 +2508,27 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
                 location: payload.location,
                 applyLink: payload.jobPortalLink,
                 resumeScore: payload.atsScore,
-                status: payload.applyStatus || "Applied"
+                status: payload.applyStatus || "Applied",
+                userEmail: getConnectedUserEmail(),
+                salary: payload.salaryDetails || "Not Disclosed",
+                email: payload.hrEmail || payload.email || "",
+                phone: payload.phone || "",
+                jdText: payload.jobDescription || "",
+                resumeUrl: getActiveResumeLink() || "",
+                coverLetter: (STATE.currentGenerated && STATE.currentGenerated.cover) || "No generated",
+                whatsAppMessage: (STATE.currentGenerated && STATE.currentGenerated.whatsapp) || "No generated",
+                emailMessage: (STATE.currentGenerated && STATE.currentGenerated.email) || "No generated",
+                atsScore: payload.atsScore
             }),
             onload: function (r) {
                 console.log("[Job Assistant] Tracked in Cloudflare D1:", r.responseText);
             }
         });
+
+        if (extras && extras.dbOnly) {
+            if (typeof onComplete === "function") onComplete({ success: true, duplicate: true }, null);
+            return;
+        }
 
         // 2. Log to Google Sheets
         GM_xmlhttpRequest({
@@ -2363,7 +2553,9 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         const dk = sk || buildJobSignature(info);
         if (!dk) { queueBackgroundLog(info, extras, onComplete); return; }
         if (isJobLoggedInSession(info) || (STATE.currentJobAlreadyLogged && STATE.currentLoggedLookupKey === sk)) {
-            if (typeof onComplete === "function") onComplete({ success: true, duplicate: true }, null); return;
+            // Already logged to sheet, but let's update D1 database with any new fields (whatsapp/email/cover)
+            queueBackgroundLog(info, Object.assign({}, extras, { dbOnly: true }), onComplete);
+            return;
         }
         if (STATE.pendingLogRequests[dk]) { if (typeof onComplete === "function") STATE.pendingLogRequests[dk].push(onComplete); return; }
         STATE.pendingLogRequests[dk] = typeof onComplete === "function" ? [onComplete] : [];
@@ -2381,6 +2573,11 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             if (info.jdText) STATE.lastObservedJdText = info.jdText;
             STATE.lastAtsScore = Number.isFinite(Number(info.atsScore)) ? Number(info.atsScore) : null;
             STATE.lastRecruiterContact = null;
+            STATE.currentGenerated = {
+                email: "No generated",
+                whatsapp: "No generated",
+                cover: "No generated"
+            };
             updateJobInfoDisplay(info); updateAtsDisplay(info.atsScore);
             syncLoggedStateForCurrentJob(info, force);
         }
@@ -2579,6 +2776,7 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
 
         // Section 2 — Candidate Info & Cloudflare R2 Storage
         const sec2 = makeSection("s2-label", "2. Candidate Info & R2 Storage", [
+            { id: "applyJobBtn", text: "🚀 Apply Job" },
             { id: "cvBtn", text: "📎 Copy Link" },
             { id: "coverBtn", text: "📄 Cover" },
             { id: "uploadR2Btn", text: "📤 Upload R2" },
@@ -2672,7 +2870,8 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         body.appendChild(makeSection("s3-label", "3. AI & Cloudflare Settings", [
             { id: "keyBtn", text: "🔑 API Keys" },
             { id: "promptBtn", text: "✏️ AI Prompt" },
-            { id: "cfSettingsBtn", text: "⚙️ Cloudflare DB", full: true }
+            { id: "cfSettingsBtn", text: "⚙️ DB Settings" },
+            { id: "dashBtn", text: "📊 Dashboard", full: true }
         ]));
 
         // Section 4 — HR Info (LinkedIn only)
@@ -2775,6 +2974,25 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
             }
         };
         shadow.getElementById("atsBtn").onclick = () => { recalculateAtsForCurrentJob(); };
+        shadow.getElementById("applyJobBtn").onclick = () => {
+            const btn = shadow.getElementById("applyJobBtn");
+            const origText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = "⏳ Saving...";
+            handleLoggedAction({ applyStatus: "Applied" }, () => {
+                btn.disabled = false;
+                btn.textContent = "✅ Applied!";
+                setTimeout(() => { btn.textContent = origText; }, 2000);
+            });
+        };
+        shadow.getElementById("dashBtn").onclick = () => {
+            const url = WORKER_URL + "/dashboard?email=" + encodeURIComponent(getConnectedUserEmail());
+            if (typeof GM_openInTab === "function") {
+                GM_openInTab(url, { active: true });
+            } else {
+                window.open(url, "_blank");
+            }
+        };
         shadow.getElementById("keyBtn").onclick = () => {
             showAiProviderModal();
             // Refresh key info after modal closes (use mutation observer on modal removal)
