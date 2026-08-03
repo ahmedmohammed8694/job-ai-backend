@@ -1352,7 +1352,7 @@ app.get("/dashboard", async (c) => {
         "Job Description"
       ];
 
-      const csvRows = [headers.map(h => `"${h.replace(/"/g, '""')}"`).join(",")];
+      const csvRows = [headers.map(h => '"' + h.replace(/"/g, '""') + '"').join(",")];
 
       filtered.forEach(app => {
         const dateStr = app.createdAt ? new Date(app.createdAt).toLocaleDateString("en-IN", {
@@ -1379,7 +1379,7 @@ app.get("/dashboard", async (c) => {
           app.jdText || ""
         ];
         
-        csvRows.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","));
+        csvRows.push(row.map(val => '"' + String(val).replace(/"/g, '""') + '"').join(","));
       });
 
       const csvContent = "\uFEFF" + csvRows.join("\r\n");
@@ -1389,7 +1389,7 @@ app.get("/dashboard", async (c) => {
       const link = document.createElement("a");
       const sanitizedEmail = "${email}".replace(/[^a-zA-Z0-9]/g, "_");
       link.href = url;
-      link.download = `job_applications_${sanitizedEmail}_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.download = 'job_applications_' + sanitizedEmail + '_' + new Date().toISOString().slice(0, 10) + '.csv';
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
