@@ -199,11 +199,6 @@
         };
     }
 
-    const EMAIL_BLOCKLIST = [
-        "example.com", "w3.org", "jquery.com", "bootstrap.com", "github.com", "google.com", "microsoft.com", 
-        "linkedin.com", "naukri.com", "indeed.com", "shine.com", "monster.com", "instahyre.com", "internshala.com"
-    ];
-
     const PROFILE = {
         name: "Mohammed Ahmed",
         phone: "+918686871994",
@@ -1784,7 +1779,7 @@ REQUIREMENTS FOR NEW PROMPT TEMPLATE:
         { label: "Python", pattern: /\bpython\b/i }
     ];
 
-    const EMAIL_BLOCKLIST = ["support@naukri.com", "noreply@", "sentry@", "example.com", "notifications@naukri.com"];
+    const EMAIL_BLOCKLIST = ["support@naukri.com", "noreply@", "sentry@", "example.com", "notifications@naukri.com", "w3.org", "jquery.com", "bootstrap.com", "github.com", "google.com", "microsoft.com", "linkedin.com", "naukri.com", "indeed.com", "shine.com", "monster.com", "instahyre.com", "internshala.com"];
 
     const STATE = {
         panel: null, shadowRoot: null, jobInfoDiv: null, atsCounter: null, logBtn: null,
