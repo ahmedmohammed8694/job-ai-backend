@@ -2549,9 +2549,9 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
                 phone: payload.phone || "",
                 jdText: payload.jobDescription || "",
                 resumeUrl: getActiveResumeLink() || "",
-                coverLetter: (STATE.currentGenerated && STATE.currentGenerated.cover) || "No generated",
-                whatsAppMessage: (STATE.currentGenerated && STATE.currentGenerated.whatsapp) || "No generated",
-                emailMessage: (STATE.currentGenerated && STATE.currentGenerated.email) || "No generated",
+                coverLetter: (STATE.currentGenerated && STATE.currentGenerated.cover && STATE.currentGenerated.cover !== "No generated") ? STATE.currentGenerated.cover : coverLetter(info),
+                whatsAppMessage: (STATE.currentGenerated && STATE.currentGenerated.whatsapp && STATE.currentGenerated.whatsapp !== "No generated") ? STATE.currentGenerated.whatsapp : waBody(info),
+                emailMessage: (STATE.currentGenerated && STATE.currentGenerated.email && STATE.currentGenerated.email !== "No generated") ? STATE.currentGenerated.email : emailBody(info),
                 atsScore: payload.atsScore
             }),
             onload: function (r) {
