@@ -18,13 +18,11 @@
    - [Part 2: Setting up Your Own Cloudflare Backend (Workers, D1, R2)](#part-2-setting-up-your-own-cloudflare-backend-workers-d1-r2)
 4. [🖥️ Application Features & Screenshot Walkthrough](#%EF%B8%8F-application-features--screenshot-walkthrough)
    - [1. Main Job Portal Control Panel](#1-main-job-portal-control-panel)
-   - [2. Interactive Resume Uploader & Viewer](#2-interactive-resume-uploader--viewer)
-   - [3. Real-Time ATS Score Keyword Matcher](#3-real-time-ats-score-keyword-matcher)
-   - [4. AI-Generated Recruiter Email Modal](#4-ai-generated-recruiter-email-modal)
-   - [5. AI-Generated WhatsApp Message Modal](#5-ai-generated-whatsapp-message-modal)
-   - [6. Dual AI Prompt Customizer & Refiner Chat](#6-dual-ai-prompt-customizer--refiner-chat)
-   - [7. Cloudflare D1 Worker Settings Panel](#7-cloudflare-d1-worker-settings-panel)
-   - [8. Premium Analytics Dashboard](#8-premium-analytics-dashboard)
+   - [2. Jobs Captured Details](#2-jobs-captured-details)
+   - [3. Candidate Info & Storage](#3-candidate-info--storage)
+   - [4. 🤖 Active AI Agent & Model](#4--active-ai-agent--model)
+   - [5. AI & Cloudflare Settings](#5-ai--cloudflare-settings)
+   - [6. Premium Analytics Dashboard](#6-premium-analytics-dashboard)
 5. [🔧 Backend Technical Development](#-backend-technical-development)
 
 ---
@@ -56,11 +54,19 @@ Install the official **Tampermonkey** browser extension for your browser:
 * [Tampermonkey for Chrome / Edge / Brave / Opera](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 * [Tampermonkey for Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
 
+![Tampermonkey Store Extension](Screenshorts/Screenshot%202026-08-04%20212245.png)
+
 #### 2. Create a New UserScript
-1. Click the **Tampermonkey icon** in your browser toolbar and select **Create a new script...**
-2. In the editor interface, delete all default placeholder code.
-3. Open **[`job-assistant-userscript.user.js`](job-assistant-userscript.user.js)** from this repository, copy all of the code, and paste it into the editor.
-4. Press **`Ctrl + S`** (or select **File** ➔ **Save**) to save the script.
+1. Click the **Tampermonkey icon** in your browser toolbar and select **Dashboard**.
+
+![Tampermonkey Dashboard](Screenshorts/Tampermonky%20Dashboard.png)
+
+2. Click the **Utility / Add (+)** button to create a new script.
+3. Clear any default code in the editor.
+4. Open **[`job-assistant-userscript.user.js`](job-assistant-userscript.user.js)** from this repository, copy all the code, and paste it into the editor.
+5. Press **`Ctrl + S`** (or select **File** ➔ **Save**) to save the script.
+
+![Tampermonkey Script Paste](Screenshorts/Tampermonky%20sript%20Past.png)
 
 ---
 
@@ -71,20 +77,26 @@ To host your own database, custom resume uploads, and the application analytics 
 #### 1. Create a Cloudflare Account
 1. Visit **[dash.cloudflare.com](https://dash.cloudflare.com/)** and sign up for a free account.
 
-#### 2. Create your D1 SQL Database
-1. In your Cloudflare Dashboard sidebar, navigate to **Workers & Pages** ➔ **D1 SQL Database**.
+#### 2. Create Workers & Pages Backend
+1. Go to **Workers & Pages** in your sidebar.
+2. Click **Create Application** ➔ **Create Worker**.
+3. Name your worker `job-ai-backend`.
+4. Deploy the basic worker.
+
+#### 3. Create your D1 SQL Database
+1. Go to **Workers & Pages** ➔ **D1 SQL Database**.
 2. Click **Create Database** ➔ **D1 Database**.
 3. Name your database `job-ai-db`.
 4. Copy your generated **Database ID** (a long string like `5d6e5a34-b240-463a-a14a-519538fd2fc4`).
 5. Open the **Console** tab of your D1 database dashboard and execute the SQL script in [schema.sql](schema.sql) to initialize the tables (`applications` and `user_api_keys`).
 
-#### 3. Create your R2 Storage Bucket
+#### 4. Create your R2 Storage Bucket
 1. Navigate to **R2 Object Storage** in your sidebar.
 2. Click **Create Bucket**.
 3. Name your bucket `jobassistantpremium`.
 4. In bucket settings, enable the **Public R2.dev bucket URL** or bind your custom subdomain to ensure uploaded resumes can be viewed inline in the browser.
 
-#### 4. Configure Wrangler in Your Local Codebase
+#### 5. Configure Wrangler in Your Local Codebase
 Open **[`wrangler.jsonc`](wrangler.jsonc)** (or `wrangler.json` / `wrangler.toml`) in your editor and update it to match your database ID:
 ```json
 {
@@ -107,7 +119,9 @@ Open **[`wrangler.jsonc`](wrangler.jsonc)** (or `wrangler.json` / `wrangler.toml
 }
 ```
 
-#### 5. Deploy the Backend Worker
+#### 6. Deploy the Backend Worker (Two Options)
+
+##### Option A: Direct Terminal Deployment
 Run these commands in your PowerShell or Bash terminal:
 ```bash
 # Log in to your Cloudflare account
@@ -116,6 +130,32 @@ npx wrangler login
 # Deploy your worker backend
 npx wrangler deploy
 ```
+
+##### Option B: GitHub Git Continuous Integration Deployment (Automated on Push)
+If you want Cloudflare to redeploy automatically every time you push code to GitHub:
+1. **Generate a Cloudflare API Token**: Go to your Cloudflare dashboard ➔ **My Profile** ➔ **API Tokens** ➔ **Create Token** ➔ Use the **Edit Cloudflare Workers** template.
+2. **Add Secret to GitHub**: In your GitHub repository, go to **Settings** ➔ **Secrets and variables** ➔ **Actions** ➔ Click **New repository secret**.
+   * **Name**: `CLOUDFLARE_API_TOKEN`
+   * **Value**: Paste the API Token you generated in Step 1.
+3. **Add Deploy Workflow**: Create a file at `.github/workflows/deploy.yml` in your repository:
+   ```yaml
+   name: Deploy
+   on:
+     push:
+       branches:
+         - main
+   jobs:
+     deploy:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - name: Deploy Worker
+           uses: cloudflare/wrangler-action@v3
+           with:
+             apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+   ```
+   Now, every time you run `git push origin main`, your worker and dashboard will automatically build and deploy!
+
 Once deployed, copy the generated worker endpoint URL (e.g. `https://job-ai-backend.yoursubdomain.workers.dev`).
 
 ---
@@ -123,123 +163,75 @@ Once deployed, copy the generated worker endpoint URL (e.g. `https://job-ai-back
 ## 🖥️ Application Features & Screenshot Walkthrough
 
 ### 1. Main Job Portal Control Panel
-When you visit job portal listings (e.g. Naukri or LinkedIn), the Job Assistant floating control panel slides in on the right-hand side. It shows the parsed job title, company, salary, location, email, and phone number extracted in real-time.
+When you visit job portal listings (e.g. Naukri or LinkedIn), the Job Assistant floating control panel slides in on the right-hand side. It automatically extracts and shows the parsed job title, company, salary, location, email, and phone number in real-time.
 
-![Floating Control Panel](Screenshorts/Screenshot%202026-08-04%20211349.png)
-
----
-
-### 2. Interactive Resume Uploader & Viewer
-Use the **`📤 Resume Upload`** button to upload your PDF resume to Cloudflare R2 storage. This replaces standard local links with a globally accessible, fast-loading, public PDF link. Click **`👁️ View Upload Resume`** to inspect your uploaded resume inline.
-
-![Resume Storage Panel](Screenshorts/Screenshot%202026-08-04%20211421.png)
+![Floating Control Panel](Screenshorts/Application.png)
 
 ---
 
-### 3. Real-Time ATS Score Keyword Matcher
-Click **`📊 Check ATS Score`** to run a local scoring check. The extension compares the job requirements with your resume text to compute an ATS score percentage, helping you edit your resume before hitting submit.
+### 2. Jobs Captured Details
+The control panel details display area extracts critical job info from the page:
+* **Role**: Shows the target job role/title the user is applying to.
+* **Comp**: The company name.
+* **Sal**: Displays the salary information (or "Not Disclosed").
+* **Email**: Parses the job description text to extract HR/recruiter email addresses automatically (displays `N/A` if none found).
+* **Phone**: Extracts recruiter phone/mobile numbers from the JD text (displays `N/A` if none found).
+* **ATS Score**: Runs a comparison check between your uploaded resume and the listing's Job Description.
 
-![ATS Score Display](Screenshorts/Screenshot%202026-08-04%20211504.png)
-
----
-
-### 4. AI-Generated Recruiter Email Modal
-Click **`✉️ Email`** to generate a personalized recruiter outreach email. The modal displays recruiter email, customizable subject, and the message content.
-* Click **`🚀 Send Email`** to open your native email app (`mailto:` link) pre-filled with the AI text, and instantly log the status.
-* Click **`🔄 Regenerate AI Email`** to get a new version from Gemini.
-
-![Email Generation Modal](Screenshorts/Screenshot%202026-08-04%20211646.png)
+![Job Captured Details](Screenshorts/Job%20Details.png)
 
 ---
 
-### 5. AI-Generated WhatsApp Message Modal
-Click **`💬 WhatsApp`** to generate a direct recruiter chat template.
-* Click **`🚀 Send WhatsApp Message`** to launch a direct web chat with the recruiter on WhatsApp Web, complete with your preloaded text.
+### 3. Candidate Info & Storage
+This section provides core logging and storage features:
+* **`🚀 Apply Job`**: Instantly captures all current job details, generates outreach messages, and saves them to your database. Turns green and changes to `✅ Applied` once tracked.
+* **`📤 Resume Upload`**: Allows you to choose your resume file and upload it directly to your Cloudflare R2 bucket.
+* **`👁️ View Upload Resume`**: Opens your custom resume hosted in your R2 bucket.
+* **`📊 Check ATS Score`**: Runs the keyword-density comparison match.
 
-![WhatsApp Modal](Screenshorts/Screenshot%202026-08-04%20211729.png)
-
----
-
-### 6. Dual AI Prompt Customizer & Refiner Chat
-Click **`✏️ AI Prompt`** to modify instructions. Under the hood, you can customize prompt schemas separately for Email and WhatsApp, or type your desired edits in the **Prompt Refiner Chat** to let Gemini auto-adjust templates.
-
-![Prompt Refiner Screen](Screenshorts/Screenshot%202026-08-04%20211802.png)
+![Candidate Info & Storage](Screenshorts/Candidate%20Info%20%26%20Storage.png)
 
 ---
 
-### 7. Cloudflare D1 Worker Settings Panel
-Click **`⚙️ Cloudflare DB`** to link your custom Worker backend URL. This registers where the Tampermonkey script sends JSON payloads when saving applications.
+### 4. 🤖 Active AI Agent & Model
+Displays the currently selected AI agent and provider/model. You can dynamically switch models or providers (e.g., Gemini, ChatGPT, Claude) using the interactive dropdown selection box.
 
-![Cloudflare Worker Settings](Screenshorts/Screenshot%202026-08-04%20212039.png)
-
----
-
-### 8. Premium Analytics Dashboard
-Access your custom backend URL `/dashboard?email=your_email@gmail.com` to view a premium metrics dashboard. It includes:
-* **Real-time Overview Cards**: Displays Total Applications, Interviewing Count, and Average ATS Score matching your active filters.
-* **Flexible Filtering**: Type any search keyword, or use the interactive dropdowns to filter by Roles, Companies, Statuses, Salaries, or Date Ranges.
-* **CSV Export**: Click **`📊 Export CSV`** to instantly download your current filtered view as a formatted spreadsheet (with BOM encoded for Excel compatibility).
-* **Inline Status Changer**: Double-click or change the dropdown under the "Status" column directly inside the table row to dynamically sync the application status to your Cloudflare database without reloading the page.
-
-![Premium Dashboard Table](Screenshorts/Screenshot%202026-08-04%20212102.png)
+![Active AI Agent & Model](Screenshorts/%F0%9F%A4%96%20Active%20AI%20Agent%20%26%20Model.png)
 
 ---
 
-### 9. Detailed Application Viewer Modal
-Click the **👁️ (View)** button in any dashboard row to slide open a detailed application modal. This contains:
-* Location, salary, and custom resume file link associated with that specific application.
-* **Parsed Recruiter Contacts**: Shows parsed HR emails and phone numbers.
-* **Full Job Description**: The captured job description text from the listing portal.
-* **Generated Outreach Templates**: Tabs containing the specific Email, WhatsApp, and Cover Letter text generated for that application.
+### 5. AI & Cloudflare Settings
 
-![Details Modal Overview](Screenshorts/Screenshot%202026-08-04%20212126.png)
-![Details Modal Templates](Screenshorts/Screenshot%202026-08-04%20212151.png)
+#### A. AI Provider Vault (API Keys Settings)
+Clicking **`🔑 API Key`** opens the Provider Vault where you can manage keys for ChatGPT, Gemini, Claude, Groq, OpenRouter, and OmniRouter.
+
+![AI Provider Vault](Screenshorts/%F0%9F%A4%96%20AI%20Provider%20Vault.png)
+
+Select any provider to view a modal popup to add your key and store it securely.
+
+![Gemini API Keys Popup](Screenshorts/Gemini%20APi%20Keys.png)
+
+#### B. AI Prompt Template Manager
+Clicking **`✏️ AI Prompt`** opens the Prompt Template Manager. You can modify prompts for Email, WhatsApp, and Cover Letters. Type your edits in the **Generate Prompt** box (e.g., *"Make it shorter"*), and Gemini will refine the template automatically.
+
+![AI Prompt Template Manager](Screenshorts/%E2%9C%8F%EF%B8%8F%20AI%20Prompt%20Template%20Manager.png)
+
+#### C. Cloudflare Connection Settings
+Input your deployed worker endpoint URL to establish connection storage so that the extension knows where to log your applications. Note: Configure this settings path before deploying.
+
+![Cloudflare Configuration Setup](Screenshorts/Cloudflare%20D1%20Database%20%26%20R2%20Storage%20Setup.png)
 
 ---
 
-### 10. Dashboard Analytics & Insights Tab
-Click the **`📊 Analytics & Insights`** tab next to the application list to view dynamic data charts:
-* **Applications by Portal**: A horizontal bar chart illustrating application counts per portal (Naukri, LinkedIn, Indeed, etc.) alongside their percentage share.
-* **Applications by Status**: Distribution of statuses (Applied, Interviewing, Offered, Rejected).
-* **Top Roles Applied**: Frequency share of different job titles.
+### 6. Premium Analytics Dashboard
+After deploying your backend worker, navigate to your `/dashboard?email=your_email@gmail.com` to view your analytics dashboard.
 
-![Dashboard Charts](Screenshorts/Screenshot%202026-08-04%20212245.png)
+![Premium Dashboard Table](Screenshorts/Job%20Applications%20Dashboard.png)
 
----
+Clicking the **👁️ (View)** button in any row opens a detailed application modal. You can inspect location, salary, resume link, full job description text, and generated recruiter outreach templates (Email, WhatsApp, Cover Letter).
 
-## 💡 How Every Feature Works
-
-### 🚀 1. Apply Job Button (Database Log Engine)
-* **How it works**: Clicking the **`🚀 Apply Job`** button on your browser widget triggers an async API call to the `/api/track` endpoint on your Cloudflare Worker.
-* **Details captured**:
-  * Job Title, Company, and Location.
-  * Salary details (e.g. "Not Disclosed" or parsed figures).
-  * Direct Job Listing Link.
-  * Extracted HR contact email and phone number.
-  * The raw text of the Job Description.
-  * The calculated ATS match score.
-  * The active resume URL hosted on your Cloudflare R2 bucket.
-  * Pre-generated fallback cover letters and messaging templates so your database records are always complete.
-* **Persistence**: Once saved, the button turns green and displays **`✅ Applied`**. The userscript checks this logged state on page load to prevent duplicate logging.
-
-### ✉️ 2. Email Option (Recruiter Email Extraction)
-* **HR Email Extraction**: The script runs pattern matching checks against the job listing page source and the description text, looking for valid email formats and domains (e.g. `hr@company.com`, `careers@...`).
-* **Generation**: If found, it matches the JD with your resume text to write a high-converting recruiter email.
-* **Outreach**: Clicking **`🚀 Send Email`** launches your local mail client with the recruiter email, subject line, and body pre-filled, while logging the application status in the database.
-
-### 💬 3. WhatsApp Option (Recruiter Phone Number Extraction)
-* **HR Phone Number Extraction**: The script parses phone number formats, specifically looking for 10-digit Indian numbers (`+91`, `91`, etc.) or international numbers inside the recruiter's posting details.
-* **Outreach**: Generates a brief intro message. Clicking **`🚀 Send WhatsApp Message`** triggers a direct `wa.me/<number>` redirection, launching a WhatsApp chat directly in a new tab without saving the contact.
-
-### 📄 4. Cover Letter (Moved to 1. Contacts Section)
-* Generates a fully formatted professional cover letter based on your parsed resume skills and the job's key requirements. It outputs your contact header, current date, greeting, intro, core achievements matching the JD, and signature. Located in Section 1 (Contacts) for unified HR outreach.
-
-### 📤 5. Resume Uploading (Cloudflare R2 Integration)
-* Clicking **`📤 Resume Upload`** opens a local file selector. The script uploads your resume directly to your Cloudflare R2 bucket using the `/api/upload-resume` Worker endpoint.
-* The returned public file URL is then dynamically injected into all your outreach signatures, making it easy for recruiters to open your resume inline.
-
-### 📊 6. ATS Score calculation
-* When you click **`📊 Check ATS Score`**, the script runs a local keyword density matcher. It extracts high-value keywords, technologies, and skills from the Job Description and compares them to your resume content to calculate a match percentage.
+![Details Modal Page 1](Screenshorts/Job%20Details%20View%201.png)
+![Details Modal Page 2](Screenshorts/Job%20Details%20View%202.png)
 
 ---
 
@@ -263,3 +255,4 @@ To re-run migrations or update schema fields remotely:
 ```bash
 npx wrangler d1 execute job-ai-db --file=./schema.sql --remote
 ```
+
