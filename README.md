@@ -18,7 +18,7 @@
    - [Part 2: Setting up Your Own Cloudflare Backend (Workers, D1, R2)](#part-2-setting-up-your-own-cloudflare-backend-workers-d1-r2)
 4. [🖥️ Application Features & Screenshot Walkthrough](#%EF%B8%8F-application-features--screenshot-walkthrough)
    - [1. Main Job Portal Control Panel](#1-main-job-portal-control-panel)
-   - [2. Interactive Resume R2 Uploader & Viewer](#2-interactive-resume-r2-uploader--viewer)
+   - [2. Interactive Resume Uploader & Viewer](#2-interactive-resume-uploader--viewer)
    - [3. Real-Time ATS Score Keyword Matcher](#3-real-time-ats-score-keyword-matcher)
    - [4. AI-Generated Recruiter Email Modal](#4-ai-generated-recruiter-email-modal)
    - [5. AI-Generated WhatsApp Message Modal](#5-ai-generated-whatsapp-message-modal)
@@ -129,8 +129,8 @@ When you visit job portal listings (e.g. Naukri or LinkedIn), the Job Assistant 
 
 ---
 
-### 2. Interactive Resume R2 Uploader & Viewer
-Use the **`📤 Upload R2`** button to upload your PDF resume to Cloudflare R2. This replaces standard local links with a globally accessible, fast-loading, public PDF link. Click **`👁️ View R2`** to inspect your uploaded resume inline.
+### 2. Interactive Resume Uploader & Viewer
+Use the **`📤 Resume Upload`** button to upload your PDF resume to Cloudflare R2 storage. This replaces standard local links with a globally accessible, fast-loading, public PDF link. Click **`👁️ View Upload Resume`** to inspect your uploaded resume inline.
 
 ![Resume Storage Panel](Screenshorts/Screenshot%202026-08-04%20211421.png)
 
@@ -231,11 +231,11 @@ Click the **`📊 Analytics & Insights`** tab next to the application list to vi
 * **HR Phone Number Extraction**: The script parses phone number formats, specifically looking for 10-digit Indian numbers (`+91`, `91`, etc.) or international numbers inside the recruiter's posting details.
 * **Outreach**: Generates a brief intro message. Clicking **`🚀 Send WhatsApp Message`** triggers a direct `wa.me/<number>` redirection, launching a WhatsApp chat directly in a new tab without saving the contact.
 
-### 📄 4. Cover Letter Option
-* Generates a fully formatted professional cover letter based on your parsed resume skills and the job's key requirements. It outputs your contact header, current date, greeting, intro, core achievements matching the JD, and signature.
+### 📄 4. Cover Letter (Moved to 1. Contacts Section)
+* Generates a fully formatted professional cover letter based on your parsed resume skills and the job's key requirements. It outputs your contact header, current date, greeting, intro, core achievements matching the JD, and signature. Located in Section 1 (Contacts) for unified HR outreach.
 
 ### 📤 5. Resume Uploading (Cloudflare R2 Integration)
-* Clicking **`📤 Upload R2`** opens a local file selector. The script uploads your resume directly to your Cloudflare R2 bucket using the `/api/upload-resume` Worker endpoint.
+* Clicking **`📤 Resume Upload`** opens a local file selector. The script uploads your resume directly to your Cloudflare R2 bucket using the `/api/upload-resume` Worker endpoint.
 * The returned public file URL is then dynamically injected into all your outreach signatures, making it easy for recruiters to open your resume inline.
 
 ### 📊 6. ATS Score calculation

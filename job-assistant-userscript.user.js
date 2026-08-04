@@ -2811,16 +2811,16 @@ ${PROFILE.name} | ${PROFILE.phone} | ${PROFILE.email}`;
         // Section 1 — Contacts
         body.appendChild(makeSection("s1-label", "1. Contacts", [
             { id: "waBtn", text: "💬 WhatsApp" },
-            { id: "mailBtn", text: "✉️ Email" }
+            { id: "mailBtn", text: "✉️ Email" },
+            { id: "coverBtn", text: "📄 Cover Letter" }
         ]));
 
-        // Section 2 — Candidate Info & Cloudflare R2 Storage
-        const sec2 = makeSection("s2-label", "2. Candidate Info & R2 Storage", [
+        // Section 2 — Candidate Info & Storage
+        const sec2 = makeSection("s2-label", "2. Candidate Info & Storage", [
             { id: "applyJobBtn", text: "🚀 Apply Job" },
             { id: "cvBtn", text: "📎 Copy Link" },
-            { id: "coverBtn", text: "📄 Cover" },
-            { id: "uploadR2Btn", text: "📤 Upload R2" },
-            { id: "viewR2Btn", text: "👁️ View R2" },
+            { id: "uploadR2Btn", text: "📤 Resume Upload" },
+            { id: "viewR2Btn", text: "👁️ View Upload Resume" },
             { id: "atsBtn", text: "📊 Check ATS Score", full: true }
         ]);
         const atsCounter = document.createElement("div"); atsCounter.id = "atsCounter"; atsCounter.style.cssText = "padding-top:4px;font-size:9.5px;color:#a78bfa;text-align:center;opacity:0.8;"; atsCounter.textContent = "ATS: --";
