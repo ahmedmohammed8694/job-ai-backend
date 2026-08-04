@@ -1,195 +1,206 @@
 # 🚀 Job Assistant Premium (V01.13)
-> **AI-Powered Job Application Assistant for Naukri, LinkedIn, Indeed, and Major Job Portals**
+> **AI-Powered Job Application Assistant with Cloudflare D1 + R2 Storage & Google Gemini 1.5 Flash**
 
 [![Tampermonkey](https://img.shields.io/badge/Tampermonkey-UserScript-green.svg)](https://www.tampermonkey.net/)
 [![Gemini AI](https://img.shields.io/badge/AI-Google%20Gemini%201.5%20Flash-blue.svg)](https://aistudio.google.com/)
 [![Cloudflare Workers](https://img.shields.io/badge/Backend-Cloudflare%20Workers-orange.svg)](https://workers.cloudflare.com/)
 [![Cloudflare D1 & R2](https://img.shields.io/badge/Storage-Cloudflare%20D1%20%26%20R2-yellow.svg)](https://www.cloudflare.com/)
 
-**Job Assistant Premium** is an intelligent browser extension (Tampermonkey UserScript) designed to automate, personalize, and track your job application process across all major job portals. Powered by **Google Gemini 1.5 Flash AI**, it analyzes Job Descriptions in real-time against your uploaded resume to craft tailored, high-converting **Emails** and **WhatsApp messages**.
+**Job Assistant Premium** is an intelligent browser extension (Tampermonkey UserScript) designed to automate, personalize, and track your job application process across all major job portals. Powered by **Google Gemini 1.5 Flash AI**, it analyzes Job Descriptions in real-time against your uploaded resume to craft tailored, high-converting **Emails** and **WhatsApp messages**, while automatically tracking all details in a central database and rendering a premium dashboard.
 
 ---
 
-## 🌟 Key Features
+## 📖 Table of Contents
+1. [🌟 What is Job Assistant Premium?](#-what-is-job-assistant-premium)
+2. [🎁 Key Benefits](#-key-benefits)
+3. [🛠️ Step-by-Step Installation Guide](#%EF%B8%8F-step-by-step-installation-guide)
+   - [Part 1: Installing & Configuring Tampermonkey](#part-1-installing--configuring-tampermonkey)
+   - [Part 2: Setting up Your Own Cloudflare Backend (Workers, D1, R2)](#part-2-setting-up-your-own-cloudflare-backend-workers-d1-r2)
+4. [🖥️ Application Features & Screenshot Walkthrough](#%EF%B8%8F-application-features--screenshot-walkthrough)
+   - [1. Main Job Portal Control Panel](#1-main-job-portal-control-panel)
+   - [2. Interactive Resume R2 Uploader & Viewer](#2-interactive-resume-r2-uploader--viewer)
+   - [3. Real-Time ATS Score Keyword Matcher](#3-real-time-ats-score-keyword-matcher)
+   - [4. AI-Generated Recruiter Email Modal](#4-ai-generated-recruiter-email-modal)
+   - [5. AI-Generated WhatsApp Message Modal](#5-ai-generated-whatsapp-message-modal)
+   - [6. Dual AI Prompt Customizer & Refiner Chat](#6-dual-ai-prompt-customizer--refiner-chat)
+   - [7. Cloudflare D1 Worker Settings Panel](#7-cloudflare-d1-worker-settings-panel)
+   - [8. Premium Analytics Dashboard](#8-premium-analytics-dashboard)
+5. [🔧 Backend Technical Development](#-backend-technical-development)
 
-### 1. 🤖 Gemini 1.5 Flash AI Messaging Engine
-- **Custom-Tailored Emails & WhatsApp Messages**: Automatically analyzes Job Descriptions (JDs) and matches them against your candidate profile.
-- **High-Converting HR Attraction Paragraphs**: Generates persuasive opening paragraphs and 3–4 bulleted metrics tailored specifically to what recruiters want.
-- **Zero-Hardcoding Signature Layout**: Contact details (Name, Phone, Email, LinkedIn, Portfolio) are extracted **strictly from your uploaded resume summary**, leaving missing fields clean and un-cluttered.
+---
 
-### 2. ✉️ & 💬 Interactive Preview & Approval Modals
-- **Interactive Email Preview Modal**:
-  - Review Recruiter Email, Subject, and Editable AI Content before sending.
-  - **`🚀 Send Email`**: Opens `mailto:` and automatically logs application to Cloudflare D1.
-  - **`🔄 Regenerate AI Email`**: Ask Gemini to write a fresh new email version live.
-  - **`📋 Copy`**: Copy text to clipboard in one click.
-- **Interactive WhatsApp Preview Modal**:
-  - Review Recruiter Phone Number and Editable AI Message.
-  - **`🚀 Send WhatsApp Message`**: Opens `wa.me` in a new tab and logs application status.
-  - **`🔄 Regenerate AI Message`**: Generate a new concise WhatsApp message live.
+## 🌟 What is Job Assistant Premium?
+It is a dual-tier system consisting of a client-side **UserScript** overlaying major job portals (Naukri, LinkedIn, Indeed, etc.) and a serverless **Cloudflare Worker** acting as your private API server, database, and asset host.
 
-### 3. ✏️ Dual AI Prompt Manager & Gemini Prompt Refiner Chat
-- **Dual Prompt Tabs**: Separate, customizable prompt managers for **✉️ Email** and **💬 WhatsApp**.
-- **🤖 Ask Gemini to Refine / Generate Prompt**: Type any command (e.g., *"Make it shorter and emphasize sales metrics"*) and Gemini AI will engineer a brand-new prompt template live!
-- **Dynamic Placeholders**: Full support for `{RESUME_TEXT}`, `{RESUME_URL}`, `{JOB_TITLE}`, `{COMPANY_NAME}`, `{JOB_DESCRIPTION}`, and `{STYLE_INSTRUCTIONS}`.
+### Who can use this?
+* **Modern Job Seekers**: Who want to stand out by messaging HRs immediately after applying.
+* **Relationship Managers & Customer Specialists**: The built-in templates are highly optimized for Customer Specialist/Relations domains, although it can be customized for any role.
+* **Developers & Tech Professionals**: Looking to self-host their own job application database and resume files.
 
-### 4. ☁️ Cloudflare R2 Storage & Inline PDF Resume Viewer
-- **`📤 Upload R2`**: Upload your PDF or Word resume directly to Cloudflare R2 cloud storage.
-- **`👁️ View R2`**: View your active uploaded resume inline in your browser (`Content-Disposition: inline`).
+---
 
-### 5. 📊 ATS Match Score Calculator & Application Logging
-- **`📊 Check ATS Score`**: Calculates real-time ATS keyword matching density between your resume and the current job description.
-- **Automatic D1 & Sheets Logging**: Logs every job application with timestamp, job title, company, portal, and application status.
-
-### 6. 🌐 Supported Job Portals
-- [Naukri.com](https://www.naukri.com)
-- [LinkedIn.com](https://www.linkedin.com)
-- [Indeed.com](https://www.indeed.com) & Indeed India
-- Foundit (Monster India)
-- Shine.com
-- TimesJobs.com
-- Hirist.com
-- Instahyre.com
+## 🎁 Key Benefits
+* **🚀 Increase Response Rates**: Send highly relevant metrics-driven emails/messages to recruiters immediately after applying.
+* **📂 100% Data Ownership**: Hosted completely on your personal Cloudflare serverless account. No third-party data collection.
+* **📉 Zero Friction**: Double-click tracking automatically saves company name, role, salary, location, job description, custom templates, ATS score, and apply link to your database.
+* **🧩 Context-Aware Signatures**: Extends your name, email, phone, and links straight from your parsed resume dynamically.
 
 ---
 
 ## 🛠️ Step-by-Step Installation Guide
 
-### Step 1: Install Tampermonkey Extension
+### Part 1: Installing & Configuring Tampermonkey
+
+#### 1. Add Tampermonkey to Your Browser
 Install the official **Tampermonkey** browser extension for your browser:
-- [Tampermonkey for Chrome / Edge / Brave](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
-- [Tampermonkey for Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
+* [Tampermonkey for Chrome / Edge / Brave / Opera](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+* [Tampermonkey for Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
 
-### Step 2: Add the UserScript
-1. Click the **Tampermonkey icon** in your browser toolbar ➔ **Create a new script**.
-2. Clear any default code in the editor.
-3. Open **[`job-assistant-userscript.user.js`](job-assistant-userscript.user.js)**, copy all the code, and paste it into the Tampermonkey editor.
-4. Press **`Ctrl + S`** (or File ➔ Save) to save the script.
-
----
-
-## 🚀 How to Set Up & Use
-
-### 1. 🔑 Set Up Your Free Gemini API Key
-1. Click the green link inside the widget or visit **[Google AI Studio](https://aistudio.google.com/apikey)** (Free to get a key).
-2. Create and copy your **Gemini API Key**.
-3. On any job portal page, click **`🔑 API Key`** on the Job Assistant widget, paste your key, and click **`💾 Save API Key`**.
-
-### 2. 📤 Upload Your Resume to Cloudflare R2
-1. On the Job Assistant panel, click **`📤 Upload R2`**.
-2. Select your resume file (`.pdf`, `.doc`, or `.docx`).
-3. Once uploaded, your custom resume link will automatically be embedded in all AI Emails & WhatsApp signatures! Click **`👁️ View R2`** to verify your uploaded resume inline.
-
-### 3. ✉️ Send Personalised AI Application Emails
-1. Navigate to any job listing on Naukri, LinkedIn, Indeed, etc.
-2. Click **`✉️ Email`**.
-3. The **Email Preview Modal** will open up on your screen.
-4. Review or edit the text. If you want a fresh variation, click **`🔄 Regenerate AI Email`**.
-5. Click **`🚀 Send Email`** to open your email client and log the application into your database!
-
-### 4. 💬 Send Personalised AI WhatsApp Messages
-1. Click **`💬 WhatsApp`** on the panel.
-2. The **WhatsApp Preview Modal** will open.
-3. Review the recruiter's phone number and message. Click **`🔄 Regenerate AI Message`** if desired.
-4. Click **`🚀 Send WhatsApp Message`** to launch WhatsApp Web (`wa.me`)!
-
-### 5. ✏️ Customize or Refine AI Prompts
-1. Click **`✏️ AI Prompt`** on the panel.
-2. Switch between **✉️ Email Prompt** and **💬 WhatsApp Prompt** tabs.
-3. Use the **`🤖 Ask Gemini to Refine / Generate Prompt`** input box to instruct Gemini how to refine your system prompt (*e.g., "Focus heavily on client retention metrics"*).
-4. Click **`✨ Generate`** and **`💾 Save Active Prompt`**.
+#### 2. Create a New UserScript
+1. Click the **Tampermonkey icon** in your browser toolbar and select **Create a new script...**
+2. In the editor interface, delete all default placeholder code.
+3. Open **[`job-assistant-userscript.user.js`](job-assistant-userscript.user.js)** from this repository, copy all of the code, and paste it into the editor.
+4. Press **`Ctrl + S`** (or select **File** ➔ **Save**) to save the script.
 
 ---
 
-## ☁️ How to Set Up Your Own Custom Cloudflare D1 Database & R2 Storage
+### Part 2: Setting up Your Own Cloudflare Backend (Workers, D1, R2)
 
-If you want to host your own private database and resume storage in your personal Cloudflare account:
+To host your own database, custom resume uploads, and the application analytics dashboard:
 
-### Step 1: Log in to Cloudflare Dashboard
-Visit **[dash.cloudflare.com](https://dash.cloudflare.com/)** and log in or create a free account.
+#### 1. Create a Cloudflare Account
+1. Visit **[dash.cloudflare.com](https://dash.cloudflare.com/)** and sign up for a free account.
 
-### Step 2: Create a Cloudflare D1 SQL Database
-1. Go to **Workers & Pages** ➔ **D1 SQL Database**.
-2. Click **Create Database** and name it `job-ai-db`.
-3. Copy your generated **Database ID** (e.g. `5d6e5a34-b240-463a-a14a-519538fd2fc4`).
-4. Click **Console** tab in your D1 database dashboard and run this SQL query to create your table:
-   ```sql
-   CREATE TABLE IF NOT EXISTS job_applications (
-     id INTEGER PRIMARY KEY AUTOINCREMENT,
-     user_email TEXT,
-     portal TEXT,
-     company TEXT,
-     title TEXT,
-     page_url TEXT,
-     apply_status TEXT,
-     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-   );
-   ```
+#### 2. Create your D1 SQL Database
+1. In your Cloudflare Dashboard sidebar, navigate to **Workers & Pages** ➔ **D1 SQL Database**.
+2. Click **Create Database** ➔ **D1 Database**.
+3. Name your database `job-ai-db`.
+4. Copy your generated **Database ID** (a long string like `5d6e5a34-b240-463a-a14a-519538fd2fc4`).
+5. Open the **Console** tab of your D1 database dashboard and execute the SQL script in [schema.sql](schema.sql) to initialize the tables (`applications` and `user_api_keys`).
 
-### Step 3: Create a Cloudflare R2 Bucket
-1. Go to **R2 Object Storage** ➔ **Create Bucket**.
-2. Name it `jobassistantpremium`.
-3. In bucket settings, enable **Public R2.dev bucket URL** or connect your custom domain to allow inline resume viewing.
+#### 3. Create your R2 Storage Bucket
+1. Navigate to **R2 Object Storage** in your sidebar.
+2. Click **Create Bucket**.
+3. Name your bucket `jobassistantpremium`.
+4. In bucket settings, enable the **Public R2.dev bucket URL** or bind your custom subdomain to ensure uploaded resumes can be viewed inline in the browser.
 
-### Step 4: Configure Wrangler & Deploy Worker
-1. Edit `wrangler.json` (or `wrangler.toml`) in your repository:
-   ```json
-   {
-     "name": "job-ai-backend",
-     "main": "server.js",
-     "compatibility_date": "2024-01-01",
-     "d1_databases": [
-       {
-         "binding": "DB",
-         "database_name": "job-ai-db",
-         "database_id": "<YOUR_D1_DATABASE_ID>"
-       }
-     ],
-     "r2_buckets": [
-       {
-         "binding": "R2",
-         "bucket_name": "jobassistantpremium"
-       }
-     ]
-   }
-   ```
-2. Log in and deploy:
-   ```bash
-   npx wrangler login
-   npx wrangler deploy
-   ```
+#### 4. Configure Wrangler in Your Local Codebase
+Open **[`wrangler.jsonc`](wrangler.jsonc)** (or `wrangler.json` / `wrangler.toml`) in your editor and update it to match your database ID:
+```json
+{
+  "name": "job-ai-backend",
+  "main": "server.js",
+  "compatibility_date": "2024-01-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "job-ai-db",
+      "database_id": "YOUR_DATABASE_ID_HERE"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "jobassistantpremium"
+    }
+  ]
+}
+```
 
-### Step 5: Update Worker URL in UserScript
-If you deployed your own worker, open **[job-assistant-userscript.user.js](job-assistant-userscript.user.js)** and click **`⚙️ Cloudflare DB`** on the Job Assistant widget panel, paste your custom Worker URL, and click **`💾 Save Worker URL`**!
-
----
-
-## 🔧 Backend Technical Architecture
-
-- **Live Worker Backend**: `https://job-ai-backend.ahmed-mohammed8694.workers.dev`
-- **Database**: Cloudflare D1 Database (`job-ai-db`)
-- **Object Storage**: Cloudflare R2 Bucket (`jobassistantpremium`)
-- **AI Model**: Google Gemini 1.5 Flash (`gemini-1.5-flash`)
-
-### Local Backend Development
+#### 5. Deploy the Backend Worker
+Run these commands in your PowerShell or Bash terminal:
 ```bash
-# Clone the repository
-git clone https://github.com/ahmedmohammed8694/job-ai-backend.git
-cd job-ai-backend
+# Log in to your Cloudflare account
+npx wrangler login
 
+# Deploy your worker backend
+npx wrangler deploy
+```
+Once deployed, copy the generated worker endpoint URL (e.g. `https://job-ai-backend.yoursubdomain.workers.dev`).
+
+---
+
+## 🖥️ Application Features & Screenshot Walkthrough
+
+### 1. Main Job Portal Control Panel
+When you visit job portal listings (e.g. Naukri or LinkedIn), the Job Assistant floating control panel slides in on the right-hand side. It shows the parsed job title, company, salary, location, email, and phone number extracted in real-time.
+
+![Floating Control Panel](Screenshorts/Screenshot%202026-08-04%20211349.png)
+
+---
+
+### 2. Interactive Resume R2 Uploader & Viewer
+Use the **`📤 Upload R2`** button to upload your PDF resume to Cloudflare R2. This replaces standard local links with a globally accessible, fast-loading, public PDF link. Click **`👁️ View R2`** to inspect your uploaded resume inline.
+
+![Resume Storage Panel](Screenshorts/Screenshot%202026-08-04%20211421.png)
+
+---
+
+### 3. Real-Time ATS Score Keyword Matcher
+Click **`📊 Check ATS Score`** to run a local scoring check. The extension compares the job requirements with your resume text to compute an ATS score percentage, helping you edit your resume before hitting submit.
+
+![ATS Score Display](Screenshorts/Screenshot%202026-08-04%20211504.png)
+
+---
+
+### 4. AI-Generated Recruiter Email Modal
+Click **`✉️ Email`** to generate a personalized recruiter outreach email. The modal displays recruiter email, customizable subject, and the message content.
+* Click **`🚀 Send Email`** to open your native email app (`mailto:` link) pre-filled with the AI text, and instantly log the status.
+* Click **`🔄 Regenerate AI Email`** to get a new version from Gemini.
+
+![Email Generation Modal](Screenshorts/Screenshot%202026-08-04%20211646.png)
+
+---
+
+### 5. AI-Generated WhatsApp Message Modal
+Click **`💬 WhatsApp`** to generate a direct recruiter chat template.
+* Click **`🚀 Send WhatsApp Message`** to launch a direct web chat with the recruiter on WhatsApp Web, complete with your preloaded text.
+
+![WhatsApp Modal](Screenshorts/Screenshot%202026-08-04%20211729.png)
+
+---
+
+### 6. Dual AI Prompt Customizer & Refiner Chat
+Click **`✏️ AI Prompt`** to modify instructions. Under the hood, you can customize prompt schemas separately for Email and WhatsApp, or type your desired edits in the **Prompt Refiner Chat** to let Gemini auto-adjust templates.
+
+![Prompt Refiner Screen](Screenshorts/Screenshot%202026-08-04%20211802.png)
+
+---
+
+### 7. Cloudflare D1 Worker Settings Panel
+Click **`⚙️ Cloudflare DB`** to link your custom Worker backend URL. This registers where the Tampermonkey script sends JSON payloads when saving applications.
+
+![Cloudflare Worker Settings](Screenshorts/Screenshot%202026-08-04%20212039.png)
+
+---
+
+### 8. Premium Analytics Dashboard
+Access your custom backend URL `/dashboard?email=your_email@gmail.com` to view a premium metrics dashboard. It includes:
+* **Interactive charts**: Application counts by job portal, role breakdown, and status trends.
+* **Flexible Filtering**: Search by keyword, role, company, status, salary, or date range.
+* **Instant Export**: Export filtered rows to CSV with one click.
+
+![Premium Dashboard](Screenshorts/Screenshot%202026-08-04%20212245.png)
+
+---
+
+## 🔧 Backend Technical Development
+
+### Running the Backend Locally
+To edit, test, or run your Hono backend worker in local dev mode:
+```bash
 # Install dependencies
 npm install
 
-# Run local Wrangler development server
+# Start local Wrangler dev server (listens on http://localhost:8787)
 npm run dev
 
-# Deploy updates to Cloudflare Workers
+# Deploy the code updates live to Cloudflare
 npx wrangler deploy
 ```
 
----
-
-## 📄 License & Credits
-
-Created with ❤️ by **Mohammed Ahmed** for modern job seekers.
-Developed using Cloudflare Workers, D1, R2, and Google Gemini AI API.
+### Resetting / Applying Database Updates
+To re-run migrations or update schema fields remotely:
+```bash
+npx wrangler d1 execute job-ai-db --file=./schema.sql --remote
+```

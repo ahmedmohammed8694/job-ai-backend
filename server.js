@@ -1552,7 +1552,7 @@ app.get("/dashboard", async (c) => {
         csvRows.push(row.map(val => '"' + String(val).replace(/"/g, '""') + '"').join(","));
       });
 
-      const csvContent = "\\uFEFF" + csvRows.join("\r\n");
+      const csvContent = "\\uFEFF" + csvRows.join("\\r\\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       
