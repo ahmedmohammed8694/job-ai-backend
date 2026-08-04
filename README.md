@@ -176,11 +176,70 @@ Click **`⚙️ Cloudflare DB`** to link your custom Worker backend URL. This re
 
 ### 8. Premium Analytics Dashboard
 Access your custom backend URL `/dashboard?email=your_email@gmail.com` to view a premium metrics dashboard. It includes:
-* **Interactive charts**: Application counts by job portal, role breakdown, and status trends.
-* **Flexible Filtering**: Search by keyword, role, company, status, salary, or date range.
-* **Instant Export**: Export filtered rows to CSV with one click.
+* **Real-time Overview Cards**: Displays Total Applications, Interviewing Count, and Average ATS Score matching your active filters.
+* **Flexible Filtering**: Type any search keyword, or use the interactive dropdowns to filter by Roles, Companies, Statuses, Salaries, or Date Ranges.
+* **CSV Export**: Click **`📊 Export CSV`** to instantly download your current filtered view as a formatted spreadsheet (with BOM encoded for Excel compatibility).
+* **Inline Status Changer**: Double-click or change the dropdown under the "Status" column directly inside the table row to dynamically sync the application status to your Cloudflare database without reloading the page.
 
-![Premium Dashboard](Screenshorts/Screenshot%202026-08-04%20212245.png)
+![Premium Dashboard Table](Screenshorts/Screenshot%202026-08-04%20212102.png)
+
+---
+
+### 9. Detailed Application Viewer Modal
+Click the **👁️ (View)** button in any dashboard row to slide open a detailed application modal. This contains:
+* Location, salary, and custom resume file link associated with that specific application.
+* **Parsed Recruiter Contacts**: Shows parsed HR emails and phone numbers.
+* **Full Job Description**: The captured job description text from the listing portal.
+* **Generated Outreach Templates**: Tabs containing the specific Email, WhatsApp, and Cover Letter text generated for that application.
+
+![Details Modal Overview](Screenshorts/Screenshot%202026-08-04%20212126.png)
+![Details Modal Templates](Screenshorts/Screenshot%202026-08-04%20212151.png)
+
+---
+
+### 10. Dashboard Analytics & Insights Tab
+Click the **`📊 Analytics & Insights`** tab next to the application list to view dynamic data charts:
+* **Applications by Portal**: A horizontal bar chart illustrating application counts per portal (Naukri, LinkedIn, Indeed, etc.) alongside their percentage share.
+* **Applications by Status**: Distribution of statuses (Applied, Interviewing, Offered, Rejected).
+* **Top Roles Applied**: Frequency share of different job titles.
+
+![Dashboard Charts](Screenshorts/Screenshot%202026-08-04%20212245.png)
+
+---
+
+## 💡 How Every Feature Works
+
+### 🚀 1. Apply Job Button (Database Log Engine)
+* **How it works**: Clicking the **`🚀 Apply Job`** button on your browser widget triggers an async API call to the `/api/track` endpoint on your Cloudflare Worker.
+* **Details captured**:
+  * Job Title, Company, and Location.
+  * Salary details (e.g. "Not Disclosed" or parsed figures).
+  * Direct Job Listing Link.
+  * Extracted HR contact email and phone number.
+  * The raw text of the Job Description.
+  * The calculated ATS match score.
+  * The active resume URL hosted on your Cloudflare R2 bucket.
+  * Pre-generated fallback cover letters and messaging templates so your database records are always complete.
+* **Persistence**: Once saved, the button turns green and displays **`✅ Applied`**. The userscript checks this logged state on page load to prevent duplicate logging.
+
+### ✉️ 2. Email Option (Recruiter Email Extraction)
+* **HR Email Extraction**: The script runs pattern matching checks against the job listing page source and the description text, looking for valid email formats and domains (e.g. `hr@company.com`, `careers@...`).
+* **Generation**: If found, it matches the JD with your resume text to write a high-converting recruiter email.
+* **Outreach**: Clicking **`🚀 Send Email`** launches your local mail client with the recruiter email, subject line, and body pre-filled, while logging the application status in the database.
+
+### 💬 3. WhatsApp Option (Recruiter Phone Number Extraction)
+* **HR Phone Number Extraction**: The script parses phone number formats, specifically looking for 10-digit Indian numbers (`+91`, `91`, etc.) or international numbers inside the recruiter's posting details.
+* **Outreach**: Generates a brief intro message. Clicking **`🚀 Send WhatsApp Message`** triggers a direct `wa.me/<number>` redirection, launching a WhatsApp chat directly in a new tab without saving the contact.
+
+### 📄 4. Cover Letter Option
+* Generates a fully formatted professional cover letter based on your parsed resume skills and the job's key requirements. It outputs your contact header, current date, greeting, intro, core achievements matching the JD, and signature.
+
+### 📤 5. Resume Uploading (Cloudflare R2 Integration)
+* Clicking **`📤 Upload R2`** opens a local file selector. The script uploads your resume directly to your Cloudflare R2 bucket using the `/api/upload-resume` Worker endpoint.
+* The returned public file URL is then dynamically injected into all your outreach signatures, making it easy for recruiters to open your resume inline.
+
+### 📊 6. ATS Score calculation
+* When you click **`📊 Check ATS Score`**, the script runs a local keyword density matcher. It extracts high-value keywords, technologies, and skills from the Job Description and compares them to your resume content to calculate a match percentage.
 
 ---
 
