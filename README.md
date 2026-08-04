@@ -1,4 +1,4 @@
-# 🚀 Job Assistant Premium (V01.13)
+# 🚀 Job Assistant Premium (V01.41)
 > **AI-Powered Job Application Assistant with Cloudflare D1 + R2 Storage & Google Gemini 1.5 Flash**
 
 [![Tampermonkey](https://img.shields.io/badge/Tampermonkey-UserScript-green.svg)](https://www.tampermonkey.net/)
